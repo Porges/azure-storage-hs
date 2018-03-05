@@ -1,4 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
+
 module Azure.Storage.Authentication
     ( AccountName
     , accountName
@@ -63,9 +65,9 @@ accountName :: Text -> Validation [String] AccountName
 accountName input = AccountName . encodeUtf8 <$> vs input
     where
     vs = validations
-        [ ("AccountName must be at least 3 characters",
+        [ ("AccountName must be more than 3 characters long",
             (>= 3) . Text.length)
-        , ("AccountName must be less than 25 characters",
+        , ("AccountName must be less than 25 characters long",
             (<= 24) . Text.length)
         , ("AccountName must be lowercase alphanumeric",
             Text.all (\c -> c >= 'a' && c <= 'z' || c >= '0' && c <= '9'))
