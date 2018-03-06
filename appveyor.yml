@@ -14,7 +14,6 @@ environment:
     APPVEYOR_SAVE_CACHE_ON_ERROR: true
 cache:
 - c:\sr
-- C:\Users\appveyor\AppData\Local\Programs\stack
 
 install:
 - ps: |
@@ -26,6 +25,8 @@ install:
     cmd /c start /wait msiexec /i "$msiPath" /q
     del $msiPath
     Write-Host "Installed Azure storage emulator" -ForegroundColor Green
+# Make sure GHC is in STACK_ROOT
+- ps: echo "local-programs-path: c:\sr\programs"  > c:\sr\config.yaml
 
 test_script:
 - stack setup > nul
