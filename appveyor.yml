@@ -15,6 +15,17 @@ environment:
 cache:
 - c:\sr
 
+install:
+- ps: |
+    Write-Host "Installing Azure storage emulator..." -ForegroundColor Cyan
+    Write-Host "Downloading..."
+    $msiPath = "$env:TEMP\MicrosoftAzureStorageEmulator.msi"
+    (New-Object Net.WebClient).DownloadFile('https://download.microsoft.com/download/1/F/C/1FCF23A3-BBD8-4F50-B5C2-E382F14A2AAD/MicrosoftAzureStorageEmulator.msi', $msiPath)
+    Write-Host "Installing..."
+    cmd /c start /wait msiexec /i "$msiPath" /q
+    del $msiPath
+    Write-Host "Installed Azure storage emulator" -ForegroundColor Green
+
 test_script:
 - stack setup > nul
 # init the storage emulator
