@@ -15,7 +15,6 @@ import           Hedgehog (forAll, property, (===))
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import qualified Network.HTTP.Client as HTTP
-import           System.Process (callProcess)
 import           Test.Tasty (defaultMain, testGroup, TestTree, withResource)
 import           Test.Tasty.Hedgehog (testProperty)
 import           Test.Tasty.HUnit (testCase, testCaseSteps, assertBool, assertEqual, (@?=))
@@ -24,19 +23,17 @@ import qualified Test.Tasty.HUnit as HUnit
 main :: IO ()
 main = defaultMain tests
 tests =
-    withResource startStorage stopStorage $ \mgrAct -> (testGroup "Integration tests" [blobTests mgrAct])
+    withResource start stop $ \mgrAct -> testGroup "Integration tests" [blobTests mgrAct]
 
     where
-    --emulatorPath = "C:\\Program Files (x86)\\Microsoft SDKs\\Azure\\Storage Emulator\\AzureStorageEmulator.exe"
 
-    startStorage = do
-        --callProcess emulatorPath ["clear", "all"]
-        --callProcess emulatorPath ["start"]
+    start = do
         -- return an HTTP manager to share
         HTTP.newManager HTTP.defaultManagerSettings
 
-    stopStorage _mgr = pure ()
-        --callProcess emulatorPath ["stop"]
+    stop _mgr =
+        -- no cleanup needed
+        pure ()
 
 blobTests mgrAct =
     testGroup "Blob" [container bcAct]

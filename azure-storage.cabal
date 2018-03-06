@@ -54,7 +54,6 @@ test-suite integration-tests
                    , http-client
                    , either
                    , mtl
-                   , process
                    , resourcet
                    , tasty
                    , tasty-hedgehog
