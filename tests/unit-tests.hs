@@ -16,7 +16,7 @@ main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
-tests = testGroup "Tests" [authentication]
+tests = testGroup "Unit tests" [authentication]
 
 lowerAlphaNum = Gen.element (['a'..'z'] ++ ['0'..'9'])
 
@@ -34,11 +34,11 @@ authParsing = testGroup "Parsing"
         let parsed = Auth.parseConnectionString input
         parsed === Failure ["AccountName must be more than 3 characters long"]
 
+    -- TODO
     -- , testProperty "AccountName must be only lowercase alphanum" $ property $ do
     --     input <- forAll (("AccountKey=1234;AccountName=" <>) <$> Gen.text (Range.constant 3 24) lowerAlphaNum)
 
     --     let parsed = Auth.parseConnectionString input
     --     parsed === Failure ["AccountName must be only lowercase alphanumeric"]
-
 
     ]

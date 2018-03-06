@@ -178,9 +178,7 @@ signRequest (SharedKeyCredentials name@(AccountName rawName) (AccountKey rawKey)
     return (req' { HTTP.requestHeaders = authHeader : headers })
 
 -- TODO: push upstream into Cryptonite
-hmacLazy key lbs = 
-    foldl' HMAC.update (HMAC.initialize key) (LBS.toChunks lbs)
-    & HMAC.finalize
+hmacLazy key lbs = foldl' HMAC.update (HMAC.initialize key) (LBS.toChunks lbs) & HMAC.finalize
 
 stringToSign :: AccountName -> HTTP.Request -> LBS.ByteString
 stringToSign (AccountName rawName) req =
@@ -195,13 +193,13 @@ stringToSign (AccountName rawName) req =
     headers = 
         [ HTTP.method req
         , hr H.hContentEncoding
-        , hr "Content-Language"
+        , hr H.hContentLanguage
         , hr H.hContentLength
         , hr H.hContentMD5
         , hr H.hContentType
         , hr H.hDate
         , hr H.hIfModifiedSince
-        , hr "If-Match"
+        , hr H.hIfMatch
         , hr H.hIfNoneMatch
         , hr H.hIfUnmodifiedSince
         , hr H.hRange
