@@ -27,16 +27,16 @@ tests =
     withResource startStorage stopStorage $ \mgrAct -> (testGroup "Integration tests" [blobTests mgrAct])
 
     where
-    emulatorPath = "C:\\Program Files (x86)\\Microsoft SDKs\\Azure\\Storage Emulator\\AzureStorageEmulator.exe"
+    --emulatorPath = "C:\\Program Files (x86)\\Microsoft SDKs\\Azure\\Storage Emulator\\AzureStorageEmulator.exe"
 
     startStorage = do
-        callProcess emulatorPath ["clear", "all"]
-        callProcess emulatorPath ["start"]
+        --callProcess emulatorPath ["clear", "all"]
+        --callProcess emulatorPath ["start"]
         -- return an HTTP manager to share
         HTTP.newManager HTTP.defaultManagerSettings
 
-    stopStorage _mgr = do
-        callProcess emulatorPath ["stop"]
+    stopStorage _mgr = pure ()
+        --callProcess emulatorPath ["stop"]
 
 blobTests mgrAct =
     testGroup "Blob" [container bcAct]
@@ -58,7 +58,7 @@ container bcAct =
     , testCaseSteps "Create/list/delete container" $ \step -> runBC $ \bc -> do
         let containerName = AB.containerName_ "created"
 
-        step "Create container" 
+        step "Create container"
         created <- runExceptT (AB.createContainer bc containerName)
         created @?= Right True
 
