@@ -8,7 +8,7 @@ module Azure.Storage.Authentication
     , accountKey
     , developmentStorageAccount
     , StorageAccount(..)
-    , Credentials
+    , Credentials(..)
     , parseConnectionString
     , signRequest
     , apiVersion
@@ -90,6 +90,7 @@ accountKey key = AccountKey <$>
 
 data Credentials
     = SharedKeyCredentials AccountName AccountKey
+    | NoCredentials
     deriving (Show, Eq)
     
 data StorageAccount = StorageAccount
@@ -176,6 +177,7 @@ signRequest (SharedKeyCredentials name@(AccountName rawName) (AccountKey rawKey)
 
     let authHeader = (H.hAuthorization, BS.concat ["SharedKey ", rawName, ":", signature])
     return (req' { HTTP.requestHeaders = authHeader : headers })
+signRequest NoCredentials req = return req
 
 -- TODO: push upstream into Cryptonite
 hmacLazy key lbs = foldl' HMAC.update (HMAC.initialize key) (LBS.toChunks lbs) & HMAC.finalize

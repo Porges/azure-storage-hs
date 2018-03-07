@@ -15,9 +15,10 @@ import           Hedgehog (forAll, property, (===))
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import qualified Network.HTTP.Client as HTTP
+import qualified Network.HTTP.Client.TLS as HTTPS
 import           Test.Tasty (defaultMain, testGroup, TestTree, withResource)
 import           Test.Tasty.Hedgehog (testProperty)
-import           Test.Tasty.HUnit (testCase, testCaseSteps, assertBool, assertEqual, (@?=))
+import           Test.Tasty.HUnit (testCase, testCaseSteps, assertBool, assertEqual, (@?=), assertFailure)
 import qualified Test.Tasty.HUnit as HUnit
 
 main :: IO ()
@@ -29,7 +30,7 @@ tests =
 
     start = do
         -- return an HTTP manager to share
-        HTTP.newManager HTTP.defaultManagerSettings
+        HTTPS.newTlsManager
 
     stop _mgr =
         -- no cleanup needed
@@ -41,18 +42,19 @@ blobTests mgrAct =
     bcAct = do
         mgr <- mgrAct
         let (Just bc) = AB.getBlobClient Auth.developmentStorageAccount mgr
-        return bc
+        let (Just pubBC) = AB.getBlobClient (Auth.developmentStorageAccount { Auth.credentials = Auth.NoCredentials }) mgr
+        return (bc, pubBC)
 
-container :: IO AB.BlobClient -> TestTree
+container :: IO (AB.BlobClient, AB.BlobClient) -> TestTree
 container bcAct =
     let runBC f = bcAct >>= f in
 
     testGroup "Container"
-    [ testCase "Deleting nonexistent container returns false" $ runBC $ \bc -> do
+    [ testCase "Deleting nonexistent container returns false" $ runBC $ \(bc, _) -> do
         deleted <- runExceptT (AB.deleteContainer bc (AB.containerName_ "does-not-exist"))
         deleted @?= Right False
 
-    , testCaseSteps "Create/list/delete container" $ \step -> runBC $ \bc -> do
+    , testCaseSteps "Private container tests" $ \step -> runBC $ \(bc, pubBC) -> do
         let containerName = AB.containerName_ "created"
 
         step "Create container"
@@ -63,9 +65,92 @@ container bcAct =
         created <- runExceptT (AB.createContainer bc containerName)
         created @?= Right False
 
+        let blobName = AB.blobName_ "blob"
+        step "Create blob"
+        blobCreated <- runExceptT (AB.putBlob bc containerName blobName "blob-data")
+        blobCreated @?= Right ()
+
+        let publicBlobName = AB.blobName_ "blob-public"
+        step "Create blob (public) should fail"
+        blobCreated <- runExceptT (AB.putBlob pubBC containerName blobName "blob-public-data")
+        case blobCreated of
+            Left (AzureError "ResourceNotFound" _) -> pure ()
+            _ -> assertFailure "putBlob should have failed"
+
+        step "Find blob in list"
+        foundBlob <- runConduitRes (AB.listBlobs bc containerName .| CC.elem blobName)
+        foundBlob @?= True
+
+        -- TODO: when I can handle errors during enumeration
+        -- step "Find blob in list (public) should fail"
+        -- foundBlob <- runConduitRes (AB.listBlobs pubBC containerName .| CC.elem blobName)
+        -- foundBlob @?= False
+
         step "Find container in list"
         found <- runConduitRes (AB.listContainers bc .| CC.elem containerName)
         found @?= True
+
+        step "Delete container"
+        deleted <- runExceptT (AB.deleteContainer bc containerName)
+        deleted @?= Right True
+
+    , testCaseSteps "Blob-public container tests" $ \step -> runBC $ \(bc, pubBC) -> do
+
+        let containerName = AB.containerName_ "blob-public-container"
+        step "Create container"
+        created <- runExceptT (AB.createContainer' bc containerName AB.defaultCreateContainerOptions { AB.containerAccess = AB.BlobsPublic })
+        created @?= Right True
+
+        let blobName = AB.blobName_ "blob"
+        step "Create blob"
+        blobCreated <- runExceptT (AB.putBlob bc containerName blobName "blob-data")
+        blobCreated @?= Right ()
+
+        let publicBlobName = AB.blobName_ "blob-public"
+        step "Create blob (public) should fail"
+        blobCreated <- runExceptT (AB.putBlob pubBC containerName blobName "blob-public-data")
+        case blobCreated of
+            Left (AzureError "ResourceNotFound" _) -> pure ()
+            _ -> assertFailure "putBlob should have failed"
+
+        step "Find blob in list"
+        foundBlob <- runConduitRes (AB.listBlobs bc containerName .| CC.elem blobName)
+        foundBlob @?= True
+
+        -- TODO: when I can handle errors during enumeration
+        -- step "Find blob in list (public) should fail"
+        -- foundBlob <- runConduitRes (AB.listBlobs pubBC containerName .| CC.elem blobName)
+        -- foundBlob @?= False
+
+        step "Delete container"
+        deleted <- runExceptT (AB.deleteContainer bc containerName)
+        deleted @?= Right True
+
+    , testCaseSteps "Public container tests" $ \step -> runBC $ \(bc, pubBC) -> do
+        let containerName = AB.containerName_ "public-container"
+        step "Create container"
+        created <- runExceptT (AB.createContainer' bc containerName AB.defaultCreateContainerOptions { AB.containerAccess = AB.ContainerPublic })
+        created @?= Right True
+
+        let blobName = AB.blobName_ "blob"
+        step "Create blob"
+        blobCreated <- runExceptT (AB.putBlob bc containerName blobName "blob-data")
+        blobCreated @?= Right ()
+
+        let publicBlobName = AB.blobName_ "blob-public"
+        step "Create blob (public) should fail"
+        blobCreated <- runExceptT (AB.putBlob pubBC containerName blobName "blob-public-data")
+        case blobCreated of
+            Left (AzureError "ResourceNotFound" _) -> pure ()
+            _ -> assertFailure "putBlob should have failed"
+
+        step "Find blob in list"
+        foundBlob <- runConduitRes (AB.listBlobs bc containerName .| CC.elem blobName)
+        foundBlob @?= True
+
+        step "Find blob in list (public) should succeed"
+        foundBlob <- runConduitRes (AB.listBlobs pubBC containerName .| CC.elem blobName)
+        foundBlob @?= True
 
         step "Delete container"
         deleted <- runExceptT (AB.deleteContainer bc containerName)

@@ -52,6 +52,7 @@ test-suite integration-tests
                    , conduit
                    , hedgehog
                    , http-client
+                   , http-client-tls
                    , either
                    , mtl
                    , resourcet
