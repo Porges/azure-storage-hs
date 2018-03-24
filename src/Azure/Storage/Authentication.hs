@@ -16,9 +16,9 @@ module Azure.Storage.Authentication
 where
 
 import           Control.Monad.IO.Class (MonadIO, liftIO)
-import           Crypto.Hash.Algorithms (SHA256)
+import           Crypto.Hash.Algorithms (SHA256, HashAlgorithm)
 import qualified Crypto.MAC.HMAC as HMAC
-import           Data.ByteArray (ScrubbedBytes)
+import           Data.ByteArray (ScrubbedBytes, ByteArrayAccess)
 import           Data.ByteArray.Encoding (convertFromBase, convertToBase, Base(Base64))
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
@@ -83,7 +83,7 @@ newtype AccountKey = AccountKey ScrubbedBytes
 -- | Parses an 'AccountKey' from 'Text' input, or fails
 -- with validation errors (if the Base-64 encoding is incorrect).
 accountKey :: Text -> Validation [String] AccountKey
-accountKey key = AccountKey <$> 
+accountKey key = AccountKey <$>
     case convertFromBase Base64 (encodeUtf8 key) of
         Left msg -> Failure ["AccountKey invalid: " ++ msg]
         Right decodedKey -> Success decodedKey
@@ -92,7 +92,7 @@ data Credentials
     = SharedKeyCredentials AccountName AccountKey
     | NoCredentials
     deriving (Show, Eq)
-    
+
 data StorageAccount = StorageAccount
     { credentials :: Credentials
     , blobEndpoint :: Maybe URI
@@ -116,7 +116,7 @@ developmentStorageCredentials =
 
 -- | The development 'StorageAccount'.
 developmentStorageAccount :: StorageAccount
-developmentStorageAccount = StorageAccount 
+developmentStorageAccount = StorageAccount
     { credentials = developmentStorageCredentials
     , blobEndpoint = parseAbsoluteURI "http://127.0.0.1:10000/devstoreaccount1"
     , queueEndpoint = parseAbsoluteURI "http://127.0.0.1:10001/devstoreaccount1"
@@ -129,14 +129,14 @@ parseConnectionString csIn =
     case CS.parse csIn of
         Left msg -> Failure [msg]
         Right cs -> extractAccount cs
-        
+
     where
 
-    extractAccount cs = StorageAccount <$> creds <*> blobUri <*> queueUri <*> tableUri 
+    extractAccount cs = StorageAccount <$> creds <*> blobUri <*> queueUri <*> tableUri
 
         where
 
-        creds = 
+        creds =
             SharedKeyCredentials
                 <$> case Map.lookup "AccountName" cs of
                     Nothing -> Failure ["key 'AccountName' not found in connection string"]
@@ -164,23 +164,29 @@ parseConnectionString csIn =
 -- | Dates and signs the request.
 signRequest :: MonadIO m => Credentials -> HTTP.Request -> m HTTP.Request
 signRequest (SharedKeyCredentials name@(AccountName rawName) (AccountKey rawKey)) req =  do
-    
+
     date <- liftIO Time.getCurrentTime
     let httpDate = formatTime defaultTimeLocale "%a, %0d %b %Y %H:%M:%S GMT" date
-    let headers = ("Date", BS.pack httpDate) : HTTP.requestHeaders req 
+    let headers = ("Date", BS.pack httpDate) : HTTP.requestHeaders req
     let req' = req { HTTP.requestHeaders = headers }
     let signature =
             stringToSign name req'
             & hmacLazy rawKey -- this is really nice because the key isn't copied
             & HMAC.hmacGetDigest @SHA256
-            & convertToBase Base64 
+            & convertToBase Base64
 
     let authHeader = (H.hAuthorization, BS.concat ["SharedKey ", rawName, ":", signature])
     return (req' { HTTP.requestHeaders = authHeader : headers })
 signRequest NoCredentials req = return req
 
 -- TODO: push upstream into Cryptonite
-hmacLazy key lbs = foldl' HMAC.update (HMAC.initialize key) (LBS.toChunks lbs) & HMAC.finalize
+hmacLazy
+    ::( ByteArrayAccess key
+      , HashAlgorithm a
+      )
+    => key -> LBS.ByteString -> HMAC.HMAC a
+hmacLazy key lbs
+    = foldl' HMAC.update (HMAC.initialize key) (LBS.toChunks lbs) & HMAC.finalize
 
 stringToSign :: AccountName -> HTTP.Request -> LBS.ByteString
 stringToSign (AccountName rawName) req =
@@ -191,8 +197,8 @@ stringToSign (AccountName rawName) req =
     & LBS.fromChunks
 
     where
-    
-    headers = 
+
+    headers =
         [ HTTP.method req
         , hr H.hContentEncoding
         , hr H.hContentLanguage
@@ -206,7 +212,7 @@ stringToSign (AccountName rawName) req =
         , hr H.hIfUnmodifiedSince
         , hr H.hRange
         ]
-    
+
     hr :: H.HeaderName -> ByteString
     hr name = maybe BS.empty id (lookup name (HTTP.requestHeaders req))
 
@@ -217,11 +223,11 @@ stringToSign (AccountName rawName) req =
         & filter (\(h, _) -> "x-ms-" `BS.isPrefixOf` h)
         & map (\(h, v) -> BS.concat [h, ":", v])
         & sort
-        
+
     canonicalizedResource :: [ByteString]
     canonicalizedResource =
         BS.concat [ "/", rawName, HTTP.path req ] : normalizedQuery
-        
+
     normalizedQuery :: [ByteString]
     normalizedQuery =
         HTTP.queryString req
@@ -231,5 +237,5 @@ stringToSign (AccountName rawName) req =
         & fmap (intersperse "," . sort)
         & Map.toList
         & map (\(k, v) -> BS.concat (k : ":" : v))
-        
+
 

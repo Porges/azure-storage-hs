@@ -22,6 +22,7 @@ module Azure.Storage.Blob
     , putBlob
     , Marker
     , listContainersFromMarker
+    , BlobType(..)
     )
 where
 
@@ -43,10 +44,11 @@ import qualified Network.HTTP.Client as HTTP
 import           Network.HTTP.Conduit (http, responseBody)
 import           Network.HTTP.Types (renderQuery)
 import           Network.HTTP.Types.Header (hContentLength)
-import           Network.HTTP.Types.Method (methodGet, methodPut, methodDelete)
+import           Network.HTTP.Types.Method (methodPut, methodDelete)
 import           Network.HTTP.Types.QueryLike (toQuery)
 import qualified Network.HTTP.Types.Status as S
 import qualified Text.XML.Stream.Parse as X
+import           Data.String (IsString)
 
 data BlobClient = BlobClient
     { blobReq :: HTTP.Request
@@ -127,13 +129,13 @@ listContainersFromMarker bc@BlobClient{blobReq} marker = do
             _ <- X.ignoreTreeContent "MaxResults"
 
             X.force "expected Containers" $ X.tagNoAttr "Containers" $
-                X.manyYield $ X.tagNoAttr "Container" $ do 
+                X.manyYield $ X.tagNoAttr "Container" $ do
                     name <- X.force "expected Container/Name" $ X.tagNoAttr "Name" X.content
                     _ <- X.ignoreTreeContent "Properties"
                     return (ContainerName name)
 
             X.force "expected NextMarker" $
-                X.tagNoAttr "NextMarker" $ do 
+                X.tagNoAttr "NextMarker" $ do
                     nextMarker <- X.content
                     return (if Text.null nextMarker then Nothing else Just marker)
 
@@ -149,7 +151,7 @@ listBlobs bc cn = go Text.empty
 listBlobsFromMarker :: (MonadResource m, MonadThrow m) => BlobClient -> ContainerName -> Marker -> ConduitT () BlobName m (Maybe Marker)
 listBlobsFromMarker bc@BlobClient{blobReq} (ContainerName cn) marker = do
     issueRequest bc
-        blobReq { 
+        blobReq {
             HTTP.queryString = renderQuery True (toQuery query),
             HTTP.path = HTTP.path blobReq <> "/" <> encodeUtf8 cn -- name is safe without encoding
         }
@@ -170,7 +172,7 @@ listBlobsFromMarker bc@BlobClient{blobReq} (ContainerName cn) marker = do
             _ <- X.ignoreTreeContent "Delimiter"
 
             X.force "expected Blobs" $ X.tagNoAttr "Blobs" $
-                X.manyYield $ X.tagNoAttr "Blob" $ do 
+                X.manyYield $ X.tagNoAttr "Blob" $ do
                     name <- X.force "expected Blob/Name" $ X.tagNoAttr "Name" X.content
                     _ <- X.ignoreTreeContent "Deleted"
                     _ <- X.ignoreTreeContent "Snapshot"
@@ -179,7 +181,7 @@ listBlobsFromMarker bc@BlobClient{blobReq} (ContainerName cn) marker = do
                     return (BlobName name)
 
             X.force "expected NextMarker" $
-                X.tagNoAttr "NextMarker" $ do 
+                X.tagNoAttr "NextMarker" $ do
                     nextMarker <- X.content
                     return (if Text.null nextMarker then Nothing else Just marker)
 
@@ -189,7 +191,16 @@ data ContainerAccess
     | Private
     deriving (Eq, Show)
 
+displayContainerAccess
+    :: IsString s
+    => ContainerAccess -> s
+displayContainerAccess ContainerPublic = "container"
+displayContainerAccess BlobsPublic = "blob"
+displayContainerAccess Private = "private"
+
 data CreateContainerOptions = CreateContainerOptions { containerAccess :: ContainerAccess }
+
+defaultCreateContainerOptions :: CreateContainerOptions
 defaultCreateContainerOptions = CreateContainerOptions Private
 
 -- | Tries to create a container with the given name.
@@ -211,13 +222,11 @@ createContainer' bc (ContainerName name) opts =
         HTTP.method = methodPut,
         HTTP.path = HTTP.path r <> "/" <> encodeUtf8 name, -- name is safe without encoding
         HTTP.queryString = "?restype=container",
-        HTTP.requestHeaders = 
+        HTTP.requestHeaders =
             case containerAccess opts of
                 Private -> HTTP.requestHeaders r
                 val ->
-                    ("x-ms-blob-public-access", hVal) : HTTP.requestHeaders r
-                    where
-                    hVal = case val of ContainerPublic -> "container"; BlobsPublic -> "blob"
+                    ("x-ms-blob-public-access", displayContainerAccess val) : HTTP.requestHeaders r
     }
     handle s
         | s == S.created201 = Just True
@@ -258,9 +267,9 @@ putBlob bc (ContainerName cn) (BlobName bn) bytes =
         HTTP.requestHeaders =
             (hContentLength, BS8.pack (show (BS8.length bytes))) :
             ("x-ms-blob-type", "BlockBlob") : -- TODO
-            HTTP.requestHeaders r, 
+            HTTP.requestHeaders r,
         HTTP.requestBody = HTTP.RequestBodyBS bytes
     }
-    handle s 
+    handle s
         | s == S.created201 = Just ()
         | otherwise = Nothing
