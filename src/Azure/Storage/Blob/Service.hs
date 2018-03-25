@@ -8,10 +8,11 @@ import qualified Azure.Storage.Request as Request
 import qualified Azure.Storage.Authentication as Auth
 import qualified Network.HTTP.Client as HTTP
 import           Control.Monad.Except (liftIO, MonadIO)
+import qualified Data.Either as Either
 
 issueRequest
   :: (Request.ToRequest blobReq, Request.FromResponse a, MonadIO m)
-  => Types.Client -> blobReq -> m (Either Types.Error a)
+  => Types.Client -> blobReq -> m (Either (Types.Error, Request.Response) a)
 issueRequest client blobReq = do
   let creds = Types.blobCreds client
   let mgr = Types.blobHttp client
@@ -20,5 +21,6 @@ issueRequest client blobReq = do
   request <- Auth.signRequest creds reqUnsigned
   responseRaw <- liftIO (HTTP.httpLbs request mgr)
   let responseParsed = Request.parseResponse responseRaw
+  let response = Either.either (\e -> Left $ (e,responseRaw)) Right responseParsed
 
-  return responseParsed -- maybe also return responseRaw with Left?
+  return response

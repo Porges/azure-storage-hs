@@ -59,8 +59,9 @@ mkBinaryPairs xs = foldMap (uncurry go) xs
   where
     go h = Maybe.maybe mempty (\v -> pure (h, Types.toBinary v))
 
+type Response = HTTP.Response BSL.ByteString
 class FromResponse a where
-  parseResponse :: HTTP.Response BSL.ByteString -> Either Types.Error a
+  parseResponse :: Response -> Either Types.Error a
 
 type ResponseHeaders = Header.ResponseHeaders
 
