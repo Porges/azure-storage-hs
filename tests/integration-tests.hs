@@ -3,7 +3,8 @@
 module Main where
 
 import Azure.Storage.Authentication as Auth
-import Azure.Storage.Blob as AB 
+import Azure.Storage.Blob as AB
+import qualified Azure.Storage.Blob.Types as Types
 
 import           Control.Monad.Trans.Resource (runResourceT, MonadResource)
 import           Control.Monad.Except (runExceptT, liftIO)
@@ -41,21 +42,21 @@ blobTests mgrAct =
     where
     bcAct = do
         mgr <- mgrAct
-        let (Just bc) = AB.getBlobClient Auth.developmentStorageAccount mgr
-        let (Just pubBC) = AB.getBlobClient (Auth.developmentStorageAccount { Auth.credentials = Auth.NoCredentials }) mgr
+        let (Just bc) = AB.getClient Auth.developmentStorageAccount mgr
+        let (Just pubBC) = AB.getClient (Auth.developmentStorageAccount { Auth.credentials = Auth.NoCredentials }) mgr
         return (bc, pubBC)
 
-container :: IO (AB.BlobClient, AB.BlobClient) -> TestTree
+container :: IO (AB.Client, AB.Client) -> TestTree
 container bcAct =
     let runBC f = bcAct >>= f in
 
     testGroup "Container"
     [ testCase "Deleting nonexistent container returns false" $ runBC $ \(bc, _) -> do
-        deleted <- runExceptT (AB.deleteContainer bc (AB.containerName_ "does-not-exist"))
+        deleted <- runExceptT (AB.deleteContainer bc (Types.ContainerName "does-not-exist"))
         deleted @?= Right False
 
     , testCaseSteps "Private container tests" $ \step -> runBC $ \(bc, pubBC) -> do
-        let containerName = AB.containerName_ "created"
+        let containerName = Types.ContainerName "created"
 
         step "Create container"
         created <- runExceptT (AB.createContainer bc containerName)
@@ -65,12 +66,12 @@ container bcAct =
         created <- runExceptT (AB.createContainer bc containerName)
         created @?= Right False
 
-        let blobName = AB.blobName_ "blob"
+        let blobName = Types.BlobName "blob"
         step "Create blob"
         blobCreated <- runExceptT (AB.putBlob bc containerName blobName "blob-data")
         blobCreated @?= Right ()
 
-        let publicBlobName = AB.blobName_ "blob-public"
+        let publicBlobName = Types.BlobName "blob-public"
         step "Create blob (public) should fail"
         blobCreated <- runExceptT (AB.putBlob pubBC containerName blobName "blob-public-data")
         case blobCreated of
@@ -96,17 +97,17 @@ container bcAct =
 
     , testCaseSteps "Blob-public container tests" $ \step -> runBC $ \(bc, pubBC) -> do
 
-        let containerName = AB.containerName_ "blob-public-container"
+        let containerName = Types.ContainerName "blob-public-container"
         step "Create container"
         created <- runExceptT (AB.createContainer' bc containerName AB.defaultCreateContainerOptions { AB.containerAccess = AB.BlobsPublic })
         created @?= Right True
 
-        let blobName = AB.blobName_ "blob"
+        let blobName = Types.BlobName "blob"
         step "Create blob"
         blobCreated <- runExceptT (AB.putBlob bc containerName blobName "blob-data")
         blobCreated @?= Right ()
 
-        let publicBlobName = AB.blobName_ "blob-public"
+        let publicBlobName = Types.BlobName "blob-public"
         step "Create blob (public) should fail"
         blobCreated <- runExceptT (AB.putBlob pubBC containerName blobName "blob-public-data")
         case blobCreated of
@@ -127,17 +128,17 @@ container bcAct =
         deleted @?= Right True
 
     , testCaseSteps "Public container tests" $ \step -> runBC $ \(bc, pubBC) -> do
-        let containerName = AB.containerName_ "public-container"
+        let containerName = Types.ContainerName "public-container"
         step "Create container"
         created <- runExceptT (AB.createContainer' bc containerName AB.defaultCreateContainerOptions { AB.containerAccess = AB.ContainerPublic })
         created @?= Right True
 
-        let blobName = AB.blobName_ "blob"
+        let blobName = Types.BlobName "blob"
         step "Create blob"
         blobCreated <- runExceptT (AB.putBlob bc containerName blobName "blob-data")
         blobCreated @?= Right ()
 
-        let publicBlobName = AB.blobName_ "blob-public"
+        let publicBlobName = Types.BlobName "blob-public"
         step "Create blob (public) should fail"
         blobCreated <- runExceptT (AB.putBlob pubBC containerName blobName "blob-public-data")
         case blobCreated of

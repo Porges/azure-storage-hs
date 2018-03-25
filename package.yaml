@@ -32,6 +32,8 @@ dependencies:
 - text
 - time
 - xml-conduit
+- microlens
+- microlens-th
 
 library:
   source-dirs: src
