@@ -14,6 +14,7 @@ import           Numeric.Natural (Natural)
 
 -- | todo: derive instances to make this more useful
 newtype ETag = ETag BS.ByteString
+  deriving Show
 
 timeRFC1123 :: Text
 timeRFC1123 = "%a, %0d %b %Y %H:%M:%S GMT"
@@ -56,3 +57,4 @@ data Error
   | BlobUnderLease
   | BlobTooLarge
   | ErrorOther Text
+  deriving Show

@@ -233,7 +233,7 @@ putBlob bc (ContainerName cn) (BlobName bn) bytes =
     where
     req r = r {
         HTTP.method = methodPut,
-        HTTP.path = HTTP.path r <> "/" <> encodeUtf8 cn <> "/" <> encodeUtf8 bn, -- cn is safe, TODO about bn
+        HTTP.path = encodeUtf8 cn <> "/" <> encodeUtf8 bn, -- cn is safe, TODO about bn
         HTTP.requestHeaders =
             (hContentLength, BS8.pack (show (BS8.length bytes))) :
             ("x-ms-blob-type", "BlockBlob") : -- TODO

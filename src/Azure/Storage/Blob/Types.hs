@@ -6,6 +6,8 @@ import qualified Data.Map as Map
 import           Data.Text (Text)
 import qualified Network.HTTP.Client as HTTP
 import qualified Azure.Storage.Authentication as Auth
+import qualified Data.ByteString.Char8 as BSC
+import qualified Azure.Storage.Types as Types
 
 -- | Binary data can be stored in one of the following types:
 data BlobType
@@ -17,6 +19,8 @@ data BlobType
   -- ^ optimized for random read/write operations
   -- provide the ability to write to a range of bytes in a blob
   deriving Show
+instance Types.ToBinary BlobType where
+  toBinary = BSC.pack . show
 
 -- | User data associated to a Blob.
 type Metadata = Map.Map Text Text

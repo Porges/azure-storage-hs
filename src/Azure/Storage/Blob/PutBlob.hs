@@ -199,7 +199,9 @@ instance Request.ToMethod PutBlockBlob where
 instance Request.ToBody PutBlockBlob where
   toBody = HTTPConduit.RequestBodyLBS . _pbbBody
 instance Request.ToHeaders PutBlockBlob where
-  toHeaders = optionHeaders . _pbbOptions
+  toHeaders x
+    = ("x-ms-blob-type", Types.toBinary Blob.BlockBlob)
+    : (optionHeaders . _pbbOptions $ x)
 instance Request.ToQuery PutBlockBlob where
   toQuery = putBlobQuery . _pbbOptions
 instance Request.ToPath PutBlockBlob where
@@ -229,7 +231,9 @@ instance Request.ToMethod PutAppendBlob where
   toMethod = const putBlobMethod
 instance Request.ToBody PutAppendBlob
 instance Request.ToHeaders PutAppendBlob where
-  toHeaders = optionHeaders . _pabOptions
+  toHeaders x
+    = ("x-ms-blob-type", Types.toBinary Blob.AppendBlob)
+    : (optionHeaders . _pabOptions $ x)
 instance Request.ToQuery PutAppendBlob where
   toQuery = putBlobQuery . _pabOptions
 instance Request.ToPath PutAppendBlob where
@@ -268,7 +272,8 @@ instance Request.ToMethod PutPageBlob where
 instance Request.ToBody PutPageBlob
 instance Request.ToHeaders PutPageBlob where
   toHeaders b
-    = (optionHeaders . _ppbOptions $ b)
+    = ("x-ms-blob-type", Types.toBinary Blob.PageBlob)
+    : (optionHeaders . _ppbOptions $ b)
    <> (Request.mkBinaryPairs
         [ ("x-ms-blob-content-length", Just $ b ^. ppbBlobContentLength)
         , ("x-ms-blob-sequence-number", b ^.  ppbBlobSequenceNumber)
@@ -321,7 +326,7 @@ data PutBlobResponse = PutBlobResponse
   , _pbrAccessControlExposeHeaders :: Maybe Text
   , _pbrAccessControlAllowCredentials :: Maybe Bool
   , _pbrServerEncrypted :: Bool
-  }
+  } deriving Show
 LensTH.makeLenses ''PutBlobResponse
 
 instance Request.FromResponse PutBlobResponse where

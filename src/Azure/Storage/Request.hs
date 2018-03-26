@@ -24,7 +24,7 @@ createRequest :: ToRequest a => a -> HTTP.Request -> HTTP.Request
 createRequest a r
   = HTTP.setQueryString qs r
   { HTTP.method         = toMethod a
-  , HTTP.path           = HTTP.path r <> "/" <> toPath a
+  , HTTP.path           = toPath a
   , HTTP.requestHeaders = toHeaders a <> HTTP.requestHeaders r
   , HTTP.requestBody    = toBody a
   }
