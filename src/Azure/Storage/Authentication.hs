@@ -226,7 +226,7 @@ stringToSign (AccountName rawName) req =
 
     canonicalizedResource :: [ByteString]
     canonicalizedResource =
-        BS.concat [ "/", rawName, HTTP.path req ] : normalizedQuery
+        BS.concat [ "/", rawName, "/", HTTP.path req ] : normalizedQuery
 
     normalizedQuery :: [ByteString]
     normalizedQuery =
