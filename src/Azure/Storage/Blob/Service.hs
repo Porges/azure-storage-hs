@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Azure.Storage.Blob.Service where
 
@@ -6,17 +7,19 @@ import qualified Azure.Storage.Blob.Types as Blob
 import qualified Azure.Storage.Types as Types
 import qualified Azure.Storage.Request as Request
 import qualified Azure.Storage.Authentication as Auth
-import qualified Network.HTTP.Client as HTTP
-import           Control.Monad.Except (liftIO, MonadIO)
+import qualified Network.HTTP.Conduit as HTTP
+import           Control.Monad.Except (liftIO)
 import           Data.Proxy (Proxy(Proxy))
+import           Control.Monad.Trans.Resource (MonadResource, liftResourceT)
 
 issueRequest
-  :: (Request.ToRequest blobReq, MonadIO m)
+  :: (MonadResource m, Request.ToRequest blobReq)
   => Blob.Client -> blobReq -> m (Either Types.Error (Request.Rs blobReq))
 issueRequest client blobReq = do
   request <- Auth.signRequest creds reqUnsigned
   liftIO $ print request
-  responseRaw <- liftIO (HTTP.httpLbs request mgr)
+  responseRaw' <- liftResourceT (HTTP.http request mgr)
+  let responseRaw = Request.RsBody <$> responseRaw'
   liftIO $ print responseRaw
   return $ Request.parseResponse (p blobReq) responseRaw
   where

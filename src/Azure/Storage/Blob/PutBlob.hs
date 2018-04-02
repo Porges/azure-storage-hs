@@ -51,8 +51,6 @@ import           Lens.Micro ((^.), Lens', lens)
 import           Data.Text (Text)
 import           Numeric.Natural (Natural)
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSC
-import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Map as Map
 import qualified Data.Text.Encoding as TE
 import qualified Network.HTTP.Client as HTTP
@@ -69,7 +67,7 @@ import qualified Data.Either as Either
 
 -- | create a block blob
 createBlockBlob
-  :: BSL.ByteString -- ^ body of the blob
+  :: HTTP.RequestBody -- ^ body of the blob
   -> BlobType
 createBlockBlob = BlockBlob
 
@@ -87,10 +85,18 @@ createPageBlob = PageBlob
 -- | /See:/ smart constructors: 'createBlockBlob', 'createAppendBlob', 'createPageBlob'.
 -- Sum-type for various types of blobs, and their parameters.
 data BlobType
-  = BlockBlob BSL.ByteString
+  = BlockBlob HTTP.RequestBody
   | AppendBlob
   | PageBlob Natural (Maybe Natural)
-  deriving Show
+instance Show BlobType where
+  show (BlockBlob _) = "BlockBlob { HTTP.RequestBody }"
+  show AppendBlob = "AppendBlob"
+  show (PageBlob cl sn)
+    = "PageBlob { contentLength = "
+   <> show cl
+   <> " seqeuence = "
+   <> show sn
+   <> " }"
 
 -- | Creates a value of 'PutBlobOptions' with the minimal fields set.
 --
@@ -160,7 +166,7 @@ data PutBlob = PutBlob
 instance Request.ToRequest PutBlob where
   toMethod = const Method.methodPut
   toBody x = case x ^. pbBlobType of
-              (BlockBlob bs) -> HTTPConduit.RequestBodyLBS bs
+              (BlockBlob body) -> body
               _ -> HTTPConduit.RequestBodyLBS mempty
   toHeaders o = staticHeaders <> metaHeaders <> blobTypeHeaders (o ^. pbBlobType)
     where
@@ -180,9 +186,8 @@ instance Request.ToRequest PutBlob where
         . Map.mapKeys (CI.mk . BS.append "x-ms-meta-" . TE.encodeUtf8)
         . Map.map TE.encodeUtf8
         $ o ^. pbMetadata
-      blobTypeHeaders (BlockBlob bs)
+      blobTypeHeaders (BlockBlob _)
         = ("x-ms-blob-type", Types.toBinary Blob.BlockBlob)
-        : (Header.hContentLength, BSC.pack . show . BSL.length $ bs)
         : []
       blobTypeHeaders AppendBlob
         = pure ("x-ms-blob-type", Types.toBinary Blob.AppendBlob)

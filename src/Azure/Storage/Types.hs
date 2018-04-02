@@ -12,6 +12,7 @@ import qualified Data.ByteString as BS
 import qualified Data.Maybe as Maybe
 import           Numeric.Natural (Natural)
 import           Text.Read (readMaybe)
+import           Data.Int (Int64)
 
 -- | todo: derive instances to make this more useful
 newtype ETag = ETag BS.ByteString
@@ -43,6 +44,8 @@ instance FromBinary Natural where
 class ToBinary a where
   toBinary :: a -> BS.ByteString
 
+instance ToBinary Int64 where
+  toBinary = BSC.pack . show
 instance ToBinary Text where
   toBinary = TE.encodeUtf8
 instance ToBinary BS.ByteString where
@@ -53,7 +56,7 @@ instance ToBinary Bool where
 instance ToBinary Time.UTCTime where
   toBinary = BSC.pack . Time.formatTime Time.defaultTimeLocale (T.unpack timeRFC1123)
 instance ToBinary Natural where
-  toBinary = TE.encodeUtf8 . T.pack . show
+  toBinary = BSC.pack . show
 
 data Error
   = MarshallError Text

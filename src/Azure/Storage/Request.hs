@@ -7,7 +7,6 @@ import qualified Network.HTTP.Client as HTTP
 import qualified Data.Map as Map
 import           Data.Map (Map)
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Maybe as Maybe
 import qualified Network.HTTP.Types.Header as Header
 import qualified Network.HTTP.Types.Method as Method
@@ -17,7 +16,9 @@ import           Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import           Data.Monoid ((<>))
 import qualified Data.CaseInsensitive as CI
-import Data.Proxy (Proxy)
+import           Data.Proxy (Proxy)
+import qualified Data.Conduit as C
+import           Control.Monad.Trans.Resource (ResourceT)
 
 createRequest :: ToRequest a => a -> HTTP.Request -> HTTP.Request
 createRequest a r
@@ -34,6 +35,10 @@ type Method = Method.Method
 type Path = BS.ByteString
 type QueryParams = Map BS.ByteString BS.ByteString
 type RequestHeaders = Header.RequestHeaders
+
+newtype RsBody = RsBody { _streamBody :: C.ConduitM () BS.ByteString (ResourceT IO) () }
+instance Show RsBody where
+  show = const "RsBody { _streamBody :: C.ConduitM () BS.ByteString (ResourceT IO) () }"
 
 class ToRequest a where
 
@@ -55,7 +60,7 @@ class ToRequest a where
   type Rs a :: *
   parseResponse
     :: Proxy a -- ^ for injectivity reasons
-    -> HTTP.Response BSL.ByteString
+    -> HTTP.Response RsBody
     -> Either Types.Error (Rs a)
 
 mkBinaryPairs :: Types.ToBinary v => [(k, Maybe v)] -> [(k, BS.ByteString)]

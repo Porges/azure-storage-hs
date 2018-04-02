@@ -40,6 +40,8 @@ import qualified Network.HTTP.Client as HTTP
 import           Network.HTTP.Types (parseSimpleQuery)
 import qualified Network.HTTP.Types.Header as H
 import           Network.URI (URI(..), parseAbsoluteURI, parseURI, uriIsAbsolute)
+import           Data.Int (Int64)
+import           Data.Monoid ((<>))
 
 -- | The supported version of the Azure Storage API.
 --
@@ -166,8 +168,15 @@ signRequest :: MonadIO m => Credentials -> HTTP.Request -> m HTTP.Request
 signRequest (SharedKeyCredentials name@(AccountName rawName) (AccountKey rawKey)) req =  do
 
     date <- liftIO Time.getCurrentTime
+    contentLength <- liftIO . reqBodyLen . HTTP.requestBody $ req
+    let contentLengthHeaders
+            = if contentLength == 0
+                then []
+                else [(H.hContentLength, BS.pack . show $ contentLength)]
     let httpDate = formatTime defaultTimeLocale "%a, %0d %b %Y %H:%M:%S GMT" date
-    let headers = ("Date", BS.pack httpDate) : HTTP.requestHeaders req
+    let headers = ("Date", BS.pack httpDate)
+                : contentLengthHeaders
+               <> HTTP.requestHeaders req
     let req' = req { HTTP.requestHeaders = headers }
     let signature =
             stringToSign name req'
@@ -238,4 +247,12 @@ stringToSign (AccountName rawName) req =
         & Map.toList
         & map (\(k, v) -> BS.concat (k : ":" : v))
 
-
+-- | Determine the length of the request body
+-- Lifted from: Network.HTTP.Client.Request requestBuilder
+reqBodyLen :: HTTP.RequestBody -> IO Int64
+reqBodyLen (HTTP.RequestBodyLBS lbs) = pure $ LBS.length lbs
+reqBodyLen (HTTP.RequestBodyBS bs) = pure . fromIntegral $ BS.length bs
+reqBodyLen (HTTP.RequestBodyBuilder len _) = pure len
+reqBodyLen (HTTP.RequestBodyStream len _) = pure len
+reqBodyLen (HTTP.RequestBodyStreamChunked _) = pure 0
+reqBodyLen (HTTP.RequestBodyIO mbody) = mbody >>= reqBodyLen

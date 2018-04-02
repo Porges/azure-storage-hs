@@ -16,6 +16,7 @@ dependencies:
 - bytestring
 - case-insensitive
 - conduit
+- conduit-extra
 - connection-string
 - containers
 - cryptonite

@@ -52,7 +52,6 @@ import           Lens.Micro ((^.), Lens', lens)
 import           Data.Text (Text)
 import           Numeric.Natural (Natural)
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Map as Map
 import qualified Data.Text.Encoding as TE
 import qualified Network.HTTP.Client as HTTP
@@ -225,7 +224,7 @@ gbClientRequestId = lens _gbClientRequestId (\ s a -> s{_gbClientRequestId = a})
 -- * 'gbrServerEncrypted' - Whether the contents of the request are successfully encrypted using the specified algorithm
 --
 createGetBlobResponse
-  :: BSL.ByteString   -- ^ 'gbrBody'
+  :: Request.RsBody   -- ^ 'gbrBody'
   -> Time.UTCTime     -- ^ 'gbrLastModified'
   -> Natural          -- ^ 'gbrContentLength'
   -> Text             -- ^ 'gbrContentType'
@@ -239,7 +238,7 @@ createGetBlobResponse body modified cLen cType eTag type_ reqId
 
 -- | /See:/ 'createGetBlobResponse' smart constructor.
 data GetBlobResponse = GetBlobResponse
-  { _gbrBody :: BSL.ByteString
+  { _gbrBody :: Request.RsBody
   , _gbrLastModified :: Time.UTCTime
   , _gbrMetaData :: Blob.Metadata
   , _gbrContentLength :: Natural
@@ -257,7 +256,7 @@ data GetBlobResponse = GetBlobResponse
   , _gbrServerEncrypted :: Bool
   } deriving Show
 
-parseResponse :: HTTPConduit.Response BSL.ByteString -> Either Types.Error GetBlobResponse
+parseResponse :: HTTPConduit.Response Request.RsBody -> Either Types.Error GetBlobResponse
 parseResponse r = go $ HTTP.responseStatus r
   where
     body = HTTP.responseBody r
@@ -297,7 +296,7 @@ parseResponse r = go $ HTTP.responseStatus r
 -- * Response Lenses
 
 -- | Blob content
-gbrBody :: Lens' GetBlobResponse BSL.ByteString
+gbrBody :: Lens' GetBlobResponse Request.RsBody
 gbrBody = lens _gbrBody (\ s a -> s{_gbrBody = a})
 
 -- | The date/time that the blob was last modified.
