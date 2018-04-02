@@ -2,46 +2,37 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 
--- | The Put Blob operation creates a new block, page, or append blob
+-- | The <https://docs.microsoft.com/en-us/rest/api/storageservices/put-blob Put Blob> operation creates a new block, page, or append blob
 -- , or updates the content of an existing block blob.
 module Azure.Storage.Blob.PutBlob (
-  -- * Options
-    createPutBlobOptions
-  , PutBlobOptions
-  , pboContainerName
-  , pboBlobName
-  , pboTimeout
-  , pboContentEncoding
-  , pboContentType
-  , pboContentMD5
-  , pboCacheControl
-  , pboMetadata
-  , pboContentDisposition
-  , pboOrigin
-  , pboLeaseId
-  , pboClientRequestId
+  -- * Creating a Request
+    createPutBlob
+  , PutBlob
+  , createBlockBlob
+  , createAppendBlob
+  , createPageBlob
+  , BlobType
 
-  -- * Block blob request
-  , createPutBlockBlob
-  , PutBlockBlob
-  , pbbBody
-  , pbbOptions
+  -- * Request Lenses
+  , pbContainerName
+  , pbBlobName
+  , pbBlobType
+  , pbTimeout
+  , pbContentEncoding
+  , pbContentType
+  , pbContentMD5
+  , pbCacheControl
+  , pbMetadata
+  , pbContentDisposition
+  , pbOrigin
+  , pbLeaseId
+  , pbClientRequestId
 
-  -- * Append blob request
-  , createPutAppendBlob
-  , PutAppendBlob
-  , pabOptions
-
-  -- * Page blob request
-  , createPutPageBlob
-  , PutPageBlob
-  , ppbBlobContentLength
-  , ppbBlobSequenceNumber
-  , ppbOptions
-
-  -- * blob response
+  -- * Destructuring the Response
   , createPutBlobResponse
   , PutBlobResponse
+
+  -- * Response Lenses
   , pbrETag
   , pbrLastModified
   , pbrContentMD5
@@ -56,8 +47,7 @@ import qualified Azure.Storage.Request as Request
 import qualified Azure.Storage.Blob.Types as Blob
 import qualified Azure.Storage.Types as Types
 import           Data.Monoid ((<>))
-import           Lens.Micro ((^.))
-import qualified Lens.Micro.TH as LensTH
+import           Lens.Micro ((^.), Lens', lens)
 import           Data.Text (Text)
 import           Numeric.Natural (Natural)
 import qualified Data.ByteString as BS
@@ -75,7 +65,209 @@ import qualified Data.Time as Time
 import qualified Data.Either as Either
 
 --------------------------------------------------------------------------------
--- * blob response
+-- * Creating a Request
+
+-- | create a block blob
+createBlockBlob
+  :: BSL.ByteString -- ^ body of the blob
+  -> BlobType
+createBlockBlob = BlockBlob
+
+-- | Create an append blob
+createAppendBlob :: BlobType
+createAppendBlob = AppendBlob
+
+-- | Create a page blob
+createPageBlob
+  :: Natural          -- ^ Blob content length
+  -> (Maybe Natural)  -- ^ Blob sequence number
+  -> BlobType
+createPageBlob = PageBlob
+
+-- | /See:/ smart constructors: 'createBlockBlob', 'createAppendBlob', 'createPageBlob'.
+-- Sum-type for various types of blobs, and their parameters.
+data BlobType
+  = BlockBlob BSL.ByteString
+  | AppendBlob
+  | PageBlob Natural (Maybe Natural)
+  deriving Show
+
+-- | Creates a value of 'PutBlobOptions' with the minimal fields set.
+--
+-- Use one of the following lenses to modify other fields as desired:
+--
+-- * 'pbContainerName' - Container where the blob should be put
+--
+-- * 'pbBlobName' - Name of the blob
+--
+-- * 'pbBlobType' - Type of blob. See 'BlobType'.
+--
+-- * 'pbTimeout' - The timeout parameter is expressed in seconds.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/setting-timeouts-for-blob-service-operations Learn more>
+--
+-- * 'pbContentEncoding' - Specifies which content encodings have been applied to the blob.
+-- This value is returned to the client when the Get Blob operation is performed on the blob resource.
+-- The client can use this value when returned to decode the blob content.
+--
+-- * 'pbContentType' - The MIME content type of the blob. The default type is application/octet-stream.
+--
+-- * 'pbContentMD5' - An MD5 hash of the blob content. This hash is used to verify the integrity of the blob during transport.
+-- When this header is specified, service verifies arrived payload yields specified hash.
+-- The service auto generates the value when not set (visible in GetBlob).
+--
+-- * 'pbCacheControl' - The Blob service stores this value but does not use or modify it.
+--
+-- * 'pbMetadata' - Name-value pairs associated with the blob as metadata.
+--
+-- * 'pbLeaseId' - Required if the blob has an active lease.
+--
+-- * 'pbContentDisposition' - Specifies how to process the response payload, and also can be used to attach additional metadata.
+-- For example, if set to attachment, it indicates that the user-agent should not display the response,
+-- but instead show a Save As dialog with a filename other than the blob name specified.
+--
+-- * 'pbOrigin' - Specifies the origin from which the request is issued.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/cross-origin-resource-sharing--cors--support-for-the-azure-storage-services Learn More>
+--
+-- * 'pbClientRequestId' - Provides a client-generated, opaque value with a 1 KB character limit that is recorded in the analytics logs.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/about-storage-analytics-logging Learn more>
+--
+createPutBlob
+  :: Blob.ContainerName -- ^ 'pbContainerName'
+  -> Blob.BlobName      -- ^ 'pbBlobName'
+  -> BlobType           -- ^ 'pbBlobType'
+  -> PutBlob
+createPutBlob cn bn
+  = PutBlob cn bn Nothing Nothing Nothing Nothing Nothing mempty Nothing
+    Nothing Nothing Nothing
+
+-- | /See:/ 'createPutBlob' smart constructor.
+data PutBlob = PutBlob
+  { _pbContainerName :: Blob.ContainerName
+  , _pbBlobName :: Blob.BlobName
+  , _pbTimeout :: Maybe Natural
+  , _pbContentEncoding :: Maybe Text
+  , _pbContentType :: Maybe Text
+  , _pbContentMD5 :: Maybe Text
+  , _pbCacheControl :: Maybe Text
+  , _pbMetadata :: Blob.Metadata
+  , _pbLeaseId :: Maybe Text
+  , _pbContentDisposition :: Maybe Text
+  , _pbOrigin :: Maybe Text
+  , _pbClientRequestId :: Maybe Text
+  , _pbBlobType :: BlobType
+  } deriving Show
+
+instance Request.ToRequest PutBlob where
+  toMethod = const Method.methodPut
+  toBody x = case x ^. pbBlobType of
+              (BlockBlob bs) -> HTTPConduit.RequestBodyLBS bs
+              _ -> HTTPConduit.RequestBodyLBS mempty
+  toHeaders o = staticHeaders <> metaHeaders <> blobTypeHeaders (o ^. pbBlobType)
+    where
+      staticHeaders
+        = Request.mkBinaryPairs
+        [ (Header.hContentType, o ^. pbContentType)
+        , (Header.hContentEncoding, o ^. pbContentEncoding)
+        , (Header.hContentMD5, o ^. pbContentMD5)
+        , (Header.hCacheControl, o ^. pbCacheControl)
+        , ("x-ms-lease-id", o ^. pbLeaseId)
+        , ("x-ms-blob-content-disposition", o ^. pbContentDisposition)
+        , (Header.hOrigin, o ^. pbOrigin)
+        , ("x-ms-client-request-id", o ^. pbClientRequestId)
+        ]
+      metaHeaders
+        = Map.toList
+        . Map.mapKeys (CI.mk . BS.append "x-ms-meta-" . TE.encodeUtf8)
+        . Map.map TE.encodeUtf8
+        $ o ^. pbMetadata
+      blobTypeHeaders (BlockBlob bs)
+        = ("x-ms-blob-type", Types.toBinary Blob.BlockBlob)
+        : (Header.hContentLength, BSC.pack . show . BSL.length $ bs)
+        : []
+      blobTypeHeaders AppendBlob
+        = pure ("x-ms-blob-type", Types.toBinary Blob.AppendBlob)
+      blobTypeHeaders (PageBlob cl sn)
+        = ("x-ms-blob-type", Types.toBinary Blob.PageBlob)
+        : (Request.mkBinaryPairs
+            [ ("x-ms-blob-content-length", Just $ cl)
+            , ("x-ms-blob-sequence-number", sn)
+            ]
+          )
+
+  toQuery o = Map.fromList $ Request.mkBinaryPairs [ ("timeout", o ^. pbTimeout) ]
+  toPath o
+    = (TE.encodeUtf8 . Blob.unContainerName $ o ^. pbContainerName)
+    <> "/"
+    <> (TE.encodeUtf8 . Blob.unBlobName $ o ^. pbBlobName)
+  type Rs PutBlob = PutBlobResponse
+  parseResponse = const parseResponse
+
+--------------------------------------------------------------------------------
+-- * Request Lenses
+
+-- | Container where the blob should be put
+pbContainerName :: Lens' PutBlob Blob.ContainerName
+pbContainerName = lens _pbContainerName (\ s a -> s{_pbContainerName = a})
+
+-- | Name of the blob
+pbBlobName :: Lens' PutBlob Blob.BlobName
+pbBlobName = lens _pbBlobName (\ s a -> s{_pbBlobName = a})
+
+-- | Type of blob. See 'BlobType'.
+pbBlobType :: Lens' PutBlob BlobType
+pbBlobType = lens _pbBlobType (\ s a -> s{_pbBlobType = a})
+
+-- | The timeout parameter is expressed in seconds.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/setting-timeouts-for-blob-service-operations Learn more>
+pbTimeout :: Lens' PutBlob (Maybe Natural)
+pbTimeout = lens _pbTimeout (\ s a -> s{_pbTimeout = a})
+
+-- | 'pbContentEncoding' - Specifies which content encodings have been applied to the blob.
+-- This value is returned to the client when the Get Blob operation is performed on the blob resource.
+-- The client can use this value when returned to decode the blob content.
+pbContentEncoding :: Lens' PutBlob (Maybe Text)
+pbContentEncoding = lens _pbContentEncoding (\ s a -> s{_pbContentEncoding = a})
+
+-- | The MIME content type of the blob. The default type is application/octet-stream.
+pbContentType :: Lens' PutBlob (Maybe Text)
+pbContentType = lens _pbContentType (\ s a -> s{_pbContentType = a})
+
+-- | 'pbContentMD5' - An MD5 hash of the blob content. This hash is used to verify the integrity of the blob during transport.
+-- When this header is specified, service verifies arrived payload yields specified hash.
+-- The service auto generates the value when not set (visible in GetBlob).
+pbContentMD5 :: Lens' PutBlob (Maybe Text)
+pbContentMD5 = lens _pbContentMD5 (\ s a -> s{_pbContentMD5 = a})
+
+-- | The Blob service stores this value but does not use or modify it.
+pbCacheControl :: Lens' PutBlob (Maybe Text)
+pbCacheControl = lens _pbCacheControl (\ s a -> s{_pbCacheControl = a})
+
+-- | Name-value pairs associated with the blob as metadata.
+pbMetadata :: Lens' PutBlob Blob.Metadata
+pbMetadata = lens _pbMetadata (\ s a -> s{_pbMetadata = a})
+
+-- | Required if the blob has an active lease.
+pbLeaseId :: Lens' PutBlob (Maybe Text)
+pbLeaseId = lens _pbLeaseId (\ s a -> s{_pbLeaseId = a})
+
+-- | Specifies how to process the response payload, and also can be used to attach additional metadata.
+-- For example, if set to attachment, it indicates that the user-agent should not display the response,
+-- but instead show a Save As dialog with a filename other than the blob name specified.
+pbContentDisposition :: Lens' PutBlob (Maybe Text)
+pbContentDisposition = lens _pbContentDisposition (\ s a -> s{_pbContentDisposition = a})
+
+-- | Specifies the origin from which the request is issued.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/cross-origin-resource-sharing--cors--support-for-the-azure-storage-services Learn More>
+pbOrigin :: Lens' PutBlob (Maybe Text)
+pbOrigin = lens _pbOrigin (\ s a -> s{_pbOrigin = a})
+
+-- | Provides a client-generated, opaque value with a 1 KB character limit that is recorded in the analytics logs.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/about-storage-analytics-logging Learn more>
+pbClientRequestId :: Lens' PutBlob (Maybe Text)
+pbClientRequestId = lens _pbClientRequestId (\ s a -> s{_pbClientRequestId = a})
+
+--------------------------------------------------------------------------------
+-- * Destructuring the Response
 
 -- | Create a 'PutBlobResponse' with minimal fields.
 --
@@ -85,9 +277,9 @@ import qualified Data.Either as Either
 --
 -- * 'pbrLastModified' - The date/time that the blob was last modified.
 --
--- * 'pbrContentMD5' - This header is returned for a block blob so the client can check the integrity of message content.
+-- * 'pbrContentMD5' - Returned for a block blob so the client can check the integrity of message content.
 --
--- * 'pbrRequestId' - This header uniquely identifies the request that was made and can be used for troubleshooting the request.
+-- * 'pbrRequestId' - Uniquely identifies the request that was made and can be used for troubleshooting the request.
 -- <https://docs.microsoft.com/en-us/rest/api/storageservices/troubleshooting-api-operations Learn more>
 --
 -- * 'pbrAccessControlAllowOrigin' - When request includes Origin, and a CORS rule matches: value of the origin request header in case of a match
@@ -117,7 +309,6 @@ data PutBlobResponse = PutBlobResponse
   , _pbrAccessControlAllowCredentials :: Maybe Bool
   , _pbrServerEncrypted :: Bool
   } deriving Show
-LensTH.makeLenses ''PutBlobResponse
 
 parseResponse
   :: HTTPConduit.Response body
@@ -141,212 +332,37 @@ parseResponse r = go $ HTTP.responseStatus r
           <*> Request.lookupHeader hs "x-ms-request-server-encrypted"
 
 --------------------------------------------------------------------------------
--- * Options
+-- * Response Lenses
 
--- | Creates a value of 'PutBlobOptions' with the minimal fields set.
---
--- Use one of the following lenses to modify other fields as desired:
---
--- * 'pboContainerName' - Container where the blob should be put
---
--- * 'pboBlobName' - Name of the blob
---
--- * 'pboTimeout' - The timeout parameter is expressed in seconds.
--- <https://docs.microsoft.com/en-us/rest/api/storageservices/setting-timeouts-for-blob-service-operations Learn more>
---
--- * 'pboContentEncoding' - Specifies which content encodings have been applied to the blob.
--- This value is returned to the client when the Get Blob operation is performed on the blob resource.
--- The client can use this value when returned to decode the blob content.
---
--- * 'pboContentType' - The MIME content type of the blob. The default type is application/octet-stream.
---
--- * 'pboContentMD5' - An MD5 hash of the blob content. This hash is used to verify the integrity of the blob during transport.
--- When this header is specified, service verifies arrived payload yields specified hash.
--- The service auto generates the value when not set (visible in GetBlob).
---
--- * 'pboCacheControl' - The Blob service stores this value but does not use or modify it.
---
--- * 'pboMetadata' - Name-value pairs associated with the blob as metadata.
---
--- * 'pboLeaseId' - Required if the blob has an active lease.
---
--- * 'pboContentDisposition' - Specifies how to process the response payload, and also can be used to attach additional metadata.
--- For example, if set to attachment, it indicates that the user-agent should not display the response,
--- but instead show a Save As dialog with a filename other than the blob name specified.
---
--- * 'pboOrigin' - Specifies the origin from which the request is issued.
--- <https://docs.microsoft.com/en-us/rest/api/storageservices/cross-origin-resource-sharing--cors--support-for-the-azure-storage-services Learn More>
---
--- * 'pboClientRequestId' - Provides a client-generated, opaque value with a 1 KB character limit that is recorded in the analytics logs.
--- <https://docs.microsoft.com/en-us/rest/api/storageservices/about-storage-analytics-logging Learn more>
---
-createPutBlobOptions
-  :: Blob.ContainerName -- ^ 'pboContainerName'
-  -> Blob.BlobName      -- ^ 'pboBlobName'
-  -> PutBlobOptions
-createPutBlobOptions cn bn
-  = PutBlobOptions cn bn Nothing Nothing Nothing Nothing Nothing mempty Nothing
-    Nothing Nothing Nothing
+-- | The ETag contains a value that the client can use to perform conditional PUT operations by using the If-Match request header.
+pbrETag :: Lens' PutBlobResponse Types.ETag
+pbrETag = lens _pbrETag (\ s a -> s{_pbrETag = a})
 
--- | Common options for any type of blob.
--- /See:/ 'createPutBlobOptions' smart constructor.
-data PutBlobOptions = PutBlobOptions
-  { _pboContainerName :: Blob.ContainerName
-  , _pboBlobName :: Blob.BlobName
-  , _pboTimeout :: Maybe Natural
-  , _pboContentEncoding :: Maybe Text
-  , _pboContentType :: Maybe Text
-  , _pboContentMD5 :: Maybe Text
-  , _pboCacheControl :: Maybe Text
-  , _pboMetadata :: Blob.Metadata
-  , _pboLeaseId :: Maybe Text
-  , _pboContentDisposition :: Maybe Text
-  , _pboOrigin :: Maybe Text
-  , _pboClientRequestId :: Maybe Text
-  }
+-- | The date/time that the blob was last modified.
+pbrLastModified :: Lens' PutBlobResponse Time.UTCTime
+pbrLastModified = lens _pbrLastModified (\ s a -> s{_pbrLastModified = a})
 
-LensTH.makeLenses ''PutBlobOptions
+-- | Returned for a block blob so the client can check the integrity of message content.
+pbrContentMD5 :: Lens' PutBlobResponse (Maybe Text)
+pbrContentMD5 = lens _pbrContentMD5 (\ s a -> s{_pbrContentMD5 = a})
 
---------------------------------------------------------------------------------
--- * Utils
+-- | Uniquely identifies the request that was made and can be used for troubleshooting the request.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/troubleshooting-api-operations Learn more>
+pbrRequestId :: Lens' PutBlobResponse Text
+pbrRequestId = lens _pbrRequestId (\ s a -> s{_pbrRequestId = a})
 
-putBlobMethod :: Request.Method
-putBlobMethod = Method.methodPut
+-- | When request includes Origin, and a CORS rule matches: value of the origin request header in case of a match
+pbrAccessControlAllowOrigin :: Lens' PutBlobResponse (Maybe Text)
+pbrAccessControlAllowOrigin = lens _pbrAccessControlAllowOrigin (\ s a -> s{_pbrAccessControlAllowOrigin = a})
 
-putBlobPath :: PutBlobOptions -> Request.Path
-putBlobPath o
-  = (TE.encodeUtf8 . Blob.unContainerName $ o ^. pboContainerName)
- <> "/"
- <> (TE.encodeUtf8 . Blob.unBlobName $ o ^. pboBlobName)
+-- | When request includes Origin, and a CORS rule matches: response headers that are to be exposed to the client or issuer of the request
+pbrAccessControlExposeHeaders :: Lens' PutBlobResponse (Maybe Text)
+pbrAccessControlExposeHeaders = lens _pbrAccessControlExposeHeaders (\ s a -> s{_pbrAccessControlExposeHeaders = a})
 
-putBlobQuery :: PutBlobOptions -> Request.QueryParams
-putBlobQuery o = Map.fromList $ Request.mkBinaryPairs [ ("timeout", o ^. pboTimeout) ]
+-- | When request includes Origin, and a CORS rule matches: returns True unless all origins allowed.
+pbrAccessControlAllowCredentials :: Lens' PutBlobResponse (Maybe Bool)
+pbrAccessControlAllowCredentials = lens _pbrAccessControlAllowCredentials (\ s a -> s{_pbrAccessControlAllowCredentials = a})
 
-optionHeaders :: PutBlobOptions -> Request.RequestHeaders
-optionHeaders o = staticHeaders <> metaHeaders
-  where
-    staticHeaders
-      = Request.mkBinaryPairs
-      [ (Header.hContentType, o ^. pboContentType)
-      , (Header.hContentEncoding, o ^. pboContentEncoding)
-      , (Header.hContentMD5, o ^. pboContentMD5)
-      , (Header.hCacheControl, o ^. pboCacheControl)
-      , ("x-ms-lease-id", o ^. pboLeaseId)
-      , ("x-ms-blob-content-disposition", o ^. pboContentDisposition)
-      , (Header.hOrigin, o ^. pboOrigin)
-      , ("x-ms-client-request-id", o ^. pboClientRequestId)
-      ]
-    metaHeaders
-      = Map.toList
-      . Map.mapKeys (CI.mk . BS.append "x-ms-meta-" . TE.encodeUtf8)
-      . Map.map TE.encodeUtf8
-      $ o ^. pboMetadata
-
---------------------------------------------------------------------------------
--- * Block blob
-
--- | Create a 'PutBlockBlob' with minimal fields.
---
--- Use one of the following lenses to modify other fields as desired:
---
--- * 'pbbBody' -  Content of the blob
---
--- * 'pbbOptions' - options
---
-createPutBlockBlob
-  :: BSL.ByteString -- ^ 'pbbBody'
-  -> PutBlobOptions -- ^ 'pbbOptions'
-  -> PutBlockBlob
-createPutBlockBlob = PutBlockBlob
-
--- | /See:/ 'createPutBlockBlob' smart constructor.
-data PutBlockBlob = PutBlockBlob
-  { _pbbBody :: BSL.ByteString
-  , _pbbOptions :: PutBlobOptions
-  }
-LensTH.makeLenses ''PutBlockBlob
-
-instance Request.ToRequest PutBlockBlob where
-  toMethod = const putBlobMethod
-  toBody = HTTPConduit.RequestBodyLBS . _pbbBody
-  toHeaders x
-    = ("x-ms-blob-type", Types.toBinary Blob.BlockBlob)
-    : (Header.hContentLength, BSC.pack . show . BSL.length . _pbbBody $ x)
-    : (optionHeaders . _pbbOptions $ x)
-  toQuery = putBlobQuery . _pbbOptions
-  toPath = putBlobPath . _pbbOptions
-  type Rs PutBlockBlob = PutBlobResponse
-  parseResponse = const parseResponse
-
---------------------------------------------------------------------------------
--- * Append blob
-
--- | Create a 'PutAppendBlob' with minimal fields.
---
--- Use one of the following lenses to modify other fields as desired:
---
--- * 'pabOptions' - options
---
-createPutAppendBlob
-  :: PutBlobOptions -- ^ 'pabOptions'
-  -> PutAppendBlob
-createPutAppendBlob = PutAppendBlob
-
--- | /See:/ 'createPutAppendBlob' smart constructor.
-data PutAppendBlob = PutAppendBlob
-  { _pabOptions :: PutBlobOptions
-  }
-LensTH.makeLenses ''PutAppendBlob
-
-instance Request.ToRequest PutAppendBlob where
-  toMethod = const putBlobMethod
-  toHeaders x
-    = ("x-ms-blob-type", Types.toBinary Blob.AppendBlob)
-    : (optionHeaders . _pabOptions $ x)
-  toQuery = putBlobQuery . _pabOptions
-  toPath = putBlobPath . _pabOptions
-  type Rs PutAppendBlob = PutBlobResponse
-  parseResponse = const parseResponse
-
---------------------------------------------------------------------------------
--- * Page blob
-
--- | Create a 'PutPageBlob' with minimal fields.
---
--- Use one of the following lenses to modify other fields as desired:
---
--- * 'ppbBlobContentLength' - Specifies the maximum size for the page blob, up to 8 TB.
---
--- * 'ppbBlobSequenceNumber' - Service defaults to 0.
---
--- * 'ppbOptions' - options
---
-createPutPageBlob
-  :: Natural        -- ^ 'ppbBlobContentLength'
-  -> Maybe Natural  -- ^ 'ppbBlobSequenceNumber'
-  -> PutBlobOptions -- ^ 'ppbOptions'
-  -> PutPageBlob
-createPutPageBlob = PutPageBlob
-
--- | /See:/ 'createPutPageBlob' smart constructor.
-data PutPageBlob = PutPageBlob
-  { _ppbBlobContentLength :: Natural
-  , _ppbBlobSequenceNumber :: Maybe Natural
-  , _ppbOptions :: PutBlobOptions
-  }
-LensTH.makeLenses ''PutPageBlob
-
-instance Request.ToRequest PutPageBlob where
-  toMethod = const putBlobMethod
-  toHeaders b
-    = ("x-ms-blob-type", Types.toBinary Blob.PageBlob)
-    : (optionHeaders . _ppbOptions $ b)
-   <> (Request.mkBinaryPairs
-        [ ("x-ms-blob-content-length", Just $ b ^. ppbBlobContentLength)
-        , ("x-ms-blob-sequence-number", b ^.  ppbBlobSequenceNumber)
-        ]
-      )
-  toQuery = putBlobQuery . _ppbOptions
-  toPath = putBlobPath . _ppbOptions
-  type Rs PutPageBlob = PutBlobResponse
-  parseResponse = const parseResponse
+-- | Whether the contents of the request are successfully encrypted using the specified algorithm
+pbrServerEncrypted :: Lens' PutBlobResponse Bool
+pbrServerEncrypted = lens _pbrServerEncrypted (\ s a -> s{_pbrServerEncrypted = a})

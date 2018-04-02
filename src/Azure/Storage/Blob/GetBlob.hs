@@ -2,10 +2,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 
--- | The Get Blob operation fetches any type of blob in a container.
+-- | The <https://docs.microsoft.com/en-us/rest/api/storageservices/get-blob Get Blob> operation operation reads or downloads a blob from the system, including its metadata and properties.
 module Azure.Storage.Blob.GetBlob (
-  -- * Request
+  -- * Creating a Request
     createGetBlob
+  , GetBlob
+  , createRangeFrom
+  , createRangeWithin
+  , Range
+
+  -- * Request Lenses
   , gbrBody
   , gbContainerName
   , gbBlobName
@@ -15,14 +21,12 @@ module Azure.Storage.Blob.GetBlob (
   , gbLeaseId
   , gbOrigin
   , gbClientRequestId
-  , GetBlob
 
-  , createRangeFrom
-  , createRangeWithin
-  , Range
-
-  -- * Response
+  -- * Destructuring the Response
   , createGetBlobResponse
+  , GetBlobResponse
+
+  -- * Response Lenses
   , gbrLastModified
   , gbrMetaData
   , gbrContentLength
@@ -38,15 +42,13 @@ module Azure.Storage.Blob.GetBlob (
   , gbrAccessControlExposeHeaders
   , gbrAccessControlAllowCredentials
   , gbrServerEncrypted
-  , GetBlobResponse
 ) where
 
 import qualified Azure.Storage.Request as Request
 import qualified Azure.Storage.Blob.Types as Blob
 import qualified Azure.Storage.Types as Types
 import           Data.Monoid ((<>))
-import           Lens.Micro ((^.))
-import qualified Lens.Micro.TH as LensTH
+import           Lens.Micro ((^.), Lens', lens)
 import           Data.Text (Text)
 import           Numeric.Natural (Natural)
 import qualified Data.ByteString as BS
@@ -64,7 +66,125 @@ import qualified Data.Either as Either
 import qualified Data.Maybe as Maybe
 
 --------------------------------------------------------------------------------
--- * Response
+-- * Creating a Request
+
+-- | Select bytes starting from
+createRangeFrom :: Natural -> Range
+createRangeFrom = From
+
+-- | Select bytes within a bound range
+createRangeWithin :: (Natural, Natural) -> Range
+createRangeWithin = uncurry Within
+
+-- | /See:/ 'createRangeFrom' and 'createRangeWithin' smart constructors.
+data Range
+  = From Natural
+  | Within Natural Natural
+
+instance Types.ToBinary Range where
+  toBinary (From a)     = "bytes=" <> Types.toBinary a <> "-"
+  toBinary (Within a b) = "bytes=" <> Types.toBinary a <> "-" <> Types.toBinary b
+
+-- | Create a 'GetBlob' with minimal fields.
+--
+-- Use one of the following lenses to modify other fields as desired:
+--
+-- * 'gbContainerName' - The container where the blob resides.
+--
+-- * 'gbBlobName' - The name of the desired blob.
+--
+-- * 'gbSnapshot' - Specify the blob snapshot to retrieve
+--
+-- * 'gbTimeout' - The timeout parameter is expressed in seconds.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/setting-timeouts-for-blob-service-operations Learn more>
+--
+-- * 'gbRange' - Return only the bytes of the blob in the specified range.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/specifying-the-range-header-for-blob-service-operations Learn more>
+--
+-- * 'gbLeaseId' - Required if the blob has an active lease.
+--
+-- * 'gbOrigin' - Specifies the origin from which the request is issued.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/cross-origin-resource-sharing--cors--support-for-the-azure-storage-services Learn More>
+--
+-- * 'gbClientRequestId' - Provides a client-generated, opaque value with a 1 KB character limit that is recorded in the analytics logs.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/about-storage-analytics-logging Learn more>
+--
+createGetBlob
+  :: Blob.ContainerName -- ^ 'gbContainerName'
+  -> Blob.BlobName      -- ^ 'gbBlobName'
+  -> GetBlob
+createGetBlob cn bn = GetBlob cn bn Nothing Nothing Nothing Nothing Nothing Nothing
+
+-- | /See:/ 'createGetBlob' smart constructor.
+data GetBlob = GetBlob
+  { _gbContainerName :: Blob.ContainerName
+  , _gbBlobName :: Blob.BlobName
+  , _gbSnapshot :: Maybe Time.UTCTime
+  , _gbTimeout :: Maybe Natural
+  , _gbRange :: Maybe Range
+  , _gbLeaseId :: Maybe Text
+  , _gbOrigin :: Maybe Text
+  , _gbClientRequestId :: Maybe Text
+  }
+
+instance Request.ToRequest GetBlob where
+  toMethod = const Method.methodGet
+  toHeaders o
+    = Request.mkBinaryPairs
+    [ ("x-ms-lease-id", o ^. gbLeaseId)
+    , (Header.hOrigin, o ^. gbOrigin)
+    , ("x-ms-client-request-id", o ^. gbClientRequestId)
+    ]
+   <> Request.mkBinaryPairs
+    [ ("range", o ^. gbRange) ]
+  toQuery o = Map.fromList
+            $ Request.mkBinaryPairs [ ("timeout", o ^. gbTimeout) ]
+           <> Request.mkBinaryPairs [ ("snapshot", o ^. gbSnapshot) ]
+  toPath o
+    = (TE.encodeUtf8 . Blob.unContainerName $ o ^. gbContainerName)
+   <> "/"
+   <> (TE.encodeUtf8 . Blob.unBlobName $ o ^. gbBlobName)
+  type Rs GetBlob = GetBlobResponse
+  parseResponse = const parseResponse
+
+-- | The container where the blob resides.
+gbContainerName :: Lens' GetBlob Blob.ContainerName
+gbContainerName = lens _gbContainerName (\ s a -> s{_gbContainerName = a})
+
+-- | The name of the desired blob.
+gbBlobName :: Lens' GetBlob Blob.BlobName
+gbBlobName = lens _gbBlobName (\ s a -> s{_gbBlobName = a})
+
+-- | Specify the blob snapshot to retrieve
+gbSnapshot :: Lens' GetBlob (Maybe Time.UTCTime)
+gbSnapshot = lens _gbSnapshot (\ s a -> s{_gbSnapshot = a})
+
+-- | The timeout parameter is expressed in seconds.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/setting-timeouts-for-blob-service-operations Learn more>
+gbTimeout :: Lens' GetBlob (Maybe Natural)
+gbTimeout = lens _gbTimeout (\ s a -> s{_gbTimeout = a})
+
+-- | Return only the bytes of the blob in the specified range.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/specifying-the-range-header-for-blob-service-operations Learn more>
+gbRange :: Lens' GetBlob (Maybe Range)
+gbRange = lens _gbRange (\ s a -> s{_gbRange = a})
+
+-- | Required if the blob has an active lease.
+gbLeaseId :: Lens' GetBlob (Maybe Text)
+gbLeaseId = lens _gbLeaseId (\ s a -> s{_gbLeaseId = a})
+
+-- | Specifies the origin from which the request is issued.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/cross-origin-resource-sharing--cors--support-for-the-azure-storage-services Learn More>
+gbOrigin :: Lens' GetBlob (Maybe Text)
+gbOrigin = lens _gbOrigin (\ s a -> s{_gbOrigin = a})
+
+-- | Provides a client-generated, opaque value with a 1 KB character limit that is recorded in the analytics logs.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/about-storage-analytics-logging Learn more>
+gbClientRequestId :: Lens' GetBlob (Maybe Text)
+gbClientRequestId = lens _gbClientRequestId (\ s a -> s{_gbClientRequestId = a})
+
+--------------------------------------------------------------------------------
+-- * Destructuring the Response
 
 -- | Create a 'GetBlobResponse' with minimal fields.
 --
@@ -72,7 +192,7 @@ import qualified Data.Maybe as Maybe
 --
 -- * 'gbrBody' - Blob content
 --
--- * 'gbrLastModified' -The date/time that the blob was last modified.
+-- * 'gbrLastModified' - The date/time that the blob was last modified.
 --
 -- * 'gbrMetaData' - Name-value pairs associated with the blob as metadata.
 --
@@ -85,7 +205,7 @@ import qualified Data.Maybe as Maybe
 --
 -- * 'gbrContentMD5' - MD5 hash the client can use to check for message content integrity.
 --
--- * 'gbrCacheControl' - This header is returned if it was previously specified for the blob.
+-- * 'gbrCacheControl' - Value previously specified for the blob.
 --
 -- * 'gbrContentDisposition' - Conveys additional information about how to process the response payload.
 --
@@ -93,14 +213,14 @@ import qualified Data.Maybe as Maybe
 --
 -- * 'gbrBlobType' - Returns the blob's type.
 --
--- * 'gbrRequestId' - This header uniquely identifies the request that was made and can be used for troubleshooting the request.
+-- * 'gbrRequestId' - uniquely identifies the request that was made and can be used for troubleshooting the request.
 -- <https://docs.microsoft.com/en-us/rest/api/storageservices/troubleshooting-api-operations Learn more>
 --
 -- * 'gbrAccessControlAllowOrigin' - When request includes Origin, and a CORS rule matches: value of the origin request header in case of a match
 --
 -- * 'gbrAccessControlExposeHeaders' - When request includes Origin, and a CORS rule matches: response headers that are to be exposed to the client or issuer of the request
 --
--- * 'gbrAccessControlAllowCredentials' -When request includes Origin, and a CORS rule matches: returns True unless all origins allowed.
+-- * 'gbrAccessControlAllowCredentials' - When request includes Origin, and a CORS rule matches: returns True unless all origins allowed.
 --
 -- * 'gbrServerEncrypted' - Whether the contents of the request are successfully encrypted using the specified algorithm
 --
@@ -117,7 +237,7 @@ createGetBlobResponse body modified cLen cType eTag type_ reqId
   = GetBlobResponse body modified mempty cLen cType eTag Nothing Nothing Nothing
     Nothing type_ reqId Nothing Nothing Nothing False
 
--- /See:/ 'createGetBlobResponse' smart constructor.
+-- | /See:/ 'createGetBlobResponse' smart constructor.
 data GetBlobResponse = GetBlobResponse
   { _gbrBody :: BSL.ByteString
   , _gbrLastModified :: Time.UTCTime
@@ -136,8 +256,6 @@ data GetBlobResponse = GetBlobResponse
   , _gbrAccessControlAllowCredentials :: Maybe Bool
   , _gbrServerEncrypted :: Bool
   } deriving Show
-
-LensTH.makeLenses ''GetBlobResponse
 
 parseResponse :: HTTPConduit.Response BSL.ByteString -> Either Types.Error GetBlobResponse
 parseResponse r = go $ HTTP.responseStatus r
@@ -176,81 +294,70 @@ parseResponse r = go $ HTTP.responseStatus r
       $ hs
 
 --------------------------------------------------------------------------------
--- * Request
+-- * Response Lenses
 
--- | Select bytes starting from
-createRangeFrom :: Natural -> Range
-createRangeFrom = From
+-- | Blob content
+gbrBody :: Lens' GetBlobResponse BSL.ByteString
+gbrBody = lens _gbrBody (\ s a -> s{_gbrBody = a})
 
--- | Select bytes within a bound range
-createRangeWithin :: (Natural, Natural) -> Range
-createRangeWithin = uncurry Within
+-- | The date/time that the blob was last modified.
+gbrLastModified :: Lens' GetBlobResponse Time.UTCTime
+gbrLastModified = lens _gbrLastModified (\ s a -> s{_gbrLastModified = a})
 
--- /See:/ 'createRangeFrom' and 'createRangeWithin' smart constructors.
-data Range
-  = From Natural
-  | Within Natural Natural
+-- | Name-value pairs associated with the blob as metadata.
+gbrMetaData :: Lens' GetBlobResponse Blob.Metadata
+gbrMetaData = lens _gbrMetaData (\ s a -> s{_gbrMetaData = a})
 
-instance Types.ToBinary Range where
-  toBinary (From a)     = "bytes=" <> Types.toBinary a <> "-"
-  toBinary (Within a b) = "bytes=" <> Types.toBinary a <> "-" <> Types.toBinary b
+-- | The number of bytes present in the response body.
+gbrContentLength :: Lens' GetBlobResponse Natural
+gbrContentLength = lens _gbrContentLength (\ s a -> s{_gbrContentLength = a})
 
--- | Create a 'GetBlob' with minimal fields.
---
--- Use one of the following lenses to modify other fields as desired:
---
--- * 'gbSnapshot' - Specify the blob snapshot to retrieve
---
--- * 'gbTimeout' - The timeout parameter is expressed in seconds.
--- <https://docs.microsoft.com/en-us/rest/api/storageservices/setting-timeouts-for-blob-service-operations Learn more>
---
--- * 'gbRange' - Return only the bytes of the blob in the specified range.
--- <https://docs.microsoft.com/en-us/rest/api/storageservices/specifying-the-range-header-for-blob-service-operations Learn more>
---
--- * 'gbLeaseId' - Required if the blob has an active lease.
---
--- * 'gbOrigin' - Specifies the origin from which the request is issued.
--- <https://docs.microsoft.com/en-us/rest/api/storageservices/cross-origin-resource-sharing--cors--support-for-the-azure-storage-services Learn More>
---
--- * 'gbClientRequestId' - Provides a client-generated, opaque value with a 1 KB character limit that is recorded in the analytics logs.
--- <https://docs.microsoft.com/en-us/rest/api/storageservices/about-storage-analytics-logging Learn more>
---
-createGetBlob
-  :: Blob.ContainerName -- ^ 'gbContainerName'
-  -> Blob.BlobName      -- ^ 'gbBlobName'
-  -> GetBlob
-createGetBlob cn bn = GetBlob cn bn Nothing Nothing Nothing Nothing Nothing Nothing
+-- | The content type specified for the blob.
+gbrContentType :: Lens' GetBlobResponse Text
+gbrContentType = lens _gbrContentType (\ s a -> s{_gbrContentType = a})
 
--- /See:/ 'createGetBlob' smart constructor.
-data GetBlob = GetBlob
-  { _gbContainerName :: Blob.ContainerName
-  , _gbBlobName :: Blob.BlobName
-  , _gbSnapshot :: Maybe Time.UTCTime
-  , _gbTimeout :: Maybe Natural
-  , _gbRange :: Maybe Range
-  , _gbLeaseId :: Maybe Text
-  , _gbOrigin :: Maybe Text
-  , _gbClientRequestId :: Maybe Text
-  }
+-- | The ETag contains a value that you can use to perform operations conditionally.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/specifying-conditional-headers-for-blob-service-operations Learn more>
+gbrETag :: Lens' GetBlobResponse Types.ETag
+gbrETag = lens _gbrETag (\ s a -> s{_gbrETag = a})
 
-LensTH.makeLenses ''GetBlob
+-- | MD5 hash the client can use to check for message content integrity.
+gbrContentMD5 :: Lens' GetBlobResponse (Maybe Text)
+gbrContentMD5 = lens _gbrContentMD5 (\ s a -> s{_gbrContentMD5 = a})
 
-instance Request.ToRequest GetBlob where
-  toMethod = const Method.methodGet
-  toHeaders o
-    = Request.mkBinaryPairs
-    [ ("x-ms-lease-id", o ^. gbLeaseId)
-    , (Header.hOrigin, o ^. gbOrigin)
-    , ("x-ms-client-request-id", o ^. gbClientRequestId)
-    ]
-   <> Request.mkBinaryPairs
-    [ ("range", o ^. gbRange) ]
-  toQuery o = Map.fromList
-            $ Request.mkBinaryPairs [ ("timeout", o ^. gbTimeout) ]
-           <> Request.mkBinaryPairs [ ("snapshot", o ^. gbSnapshot) ]
-  toPath o
-    = (TE.encodeUtf8 . Blob.unContainerName $ o ^. gbContainerName)
-   <> "/"
-   <> (TE.encodeUtf8 . Blob.unBlobName $ o ^. gbBlobName)
-  type Rs GetBlob = GetBlobResponse
-  parseResponse = const parseResponse
+-- | Value previously specified for the blob.
+gbrCacheControl :: Lens' GetBlobResponse (Maybe Text)
+gbrCacheControl = lens _gbrCacheControl (\ s a -> s{_gbrCacheControl = a})
+
+-- | Conveys additional information about how to process the response payload.
+gbrContentDisposition :: Lens' GetBlobResponse (Maybe Text)
+gbrContentDisposition = lens _gbrContentDisposition (\ s a -> s{_gbrContentDisposition = a})
+
+-- | The current sequence number for a page blob.
+gbrBlobSequenceNumber :: Lens' GetBlobResponse (Maybe Natural)
+gbrBlobSequenceNumber = lens _gbrBlobSequenceNumber (\ s a -> s{_gbrBlobSequenceNumber = a})
+
+-- | Returns the blob's type.
+gbrBlobType :: Lens' GetBlobResponse Blob.BlobType
+gbrBlobType = lens _gbrBlobType (\ s a -> s{_gbrBlobType = a})
+
+-- | uniquely identifies the request that was made and can be used for troubleshooting the request.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/troubleshooting-api-operations Learn more>
+gbrRequestId :: Lens' GetBlobResponse Text
+gbrRequestId = lens _gbrRequestId (\ s a -> s{_gbrRequestId = a})
+
+-- | When request includes Origin, and a CORS rule matches: value of the origin request header in case of a match
+gbrAccessControlAllowOrigin :: Lens' GetBlobResponse (Maybe Text)
+gbrAccessControlAllowOrigin = lens _gbrAccessControlAllowOrigin (\ s a -> s{_gbrAccessControlAllowOrigin = a})
+
+-- | When request includes Origin, and a CORS rule matches: response headers that are to be exposed to the client or issuer of the request
+gbrAccessControlExposeHeaders :: Lens' GetBlobResponse (Maybe Text)
+gbrAccessControlExposeHeaders = lens _gbrAccessControlExposeHeaders (\ s a -> s{_gbrAccessControlExposeHeaders = a})
+
+-- | When request includes Origin, and a CORS rule matches: returns True unless all origins allowed.
+gbrAccessControlAllowCredentials :: Lens' GetBlobResponse (Maybe Bool)
+gbrAccessControlAllowCredentials = lens _gbrAccessControlAllowCredentials (\ s a -> s{_gbrAccessControlAllowCredentials = a})
+
+-- | Whether the contents of the request are successfully encrypted using the specified algorithm
+gbrServerEncrypted :: Lens' GetBlobResponse Bool
+gbrServerEncrypted = lens _gbrServerEncrypted (\ s a -> s{_gbrServerEncrypted = a})
