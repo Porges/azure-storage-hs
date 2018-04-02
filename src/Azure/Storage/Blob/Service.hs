@@ -8,19 +8,20 @@ import qualified Azure.Storage.Request as Request
 import qualified Azure.Storage.Authentication as Auth
 import qualified Network.HTTP.Client as HTTP
 import           Control.Monad.Except (liftIO, MonadIO)
+import           Data.Proxy (Proxy(Proxy))
 
 issueRequest
-  :: (Request.ToRequest blobReq, Request.FromResponse a, MonadIO m)
-  => Blob.Client -> blobReq -> m (Either Types.Error a)
+  :: (Request.ToRequest blobReq, MonadIO m)
+  => Blob.Client -> blobReq -> m (Either Types.Error (Request.Rs blobReq))
 issueRequest client blobReq = do
-  let creds = Blob.blobCreds client
-  let mgr = Blob.blobHttp client
-  let reqUnsigned = Request.createRequest blobReq $ Blob.blobReq client
-
   request <- Auth.signRequest creds reqUnsigned
   liftIO $ print request
   responseRaw <- liftIO (HTTP.httpLbs request mgr)
   liftIO $ print responseRaw
-  let responseParsed = Request.parseResponse responseRaw
-
-  return responseParsed
+  return $ Request.parseResponse (p blobReq) responseRaw
+  where
+    creds = Blob.blobCreds client
+    mgr = Blob.blobHttp client
+    reqUnsigned = Request.createRequest blobReq $ Blob.blobReq client
+    p :: Request.ToRequest a => a -> Proxy a
+    p = const Proxy

@@ -1,5 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- | The Put Blob operation creates a new block, page, or append blob
 -- , or updates the content of an existing block blob.
@@ -60,6 +61,7 @@ import qualified Lens.Micro.TH as LensTH
 import           Data.Text (Text)
 import           Numeric.Natural (Natural)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Map as Map
 import qualified Data.Text.Encoding as TE
@@ -73,6 +75,72 @@ import qualified Data.Time as Time
 import qualified Data.Either as Either
 
 --------------------------------------------------------------------------------
+-- * blob response
+
+-- | Create a 'PutBlobResponse' with minimal fields.
+--
+-- Use one of the following lenses to modify other fields as desired:
+--
+-- * 'pbrETag' - The ETag contains a value that the client can use to perform conditional PUT operations by using the If-Match request header.
+--
+-- * 'pbrLastModified' - The date/time that the blob was last modified.
+--
+-- * 'pbrContentMD5' - This header is returned for a block blob so the client can check the integrity of message content.
+--
+-- * 'pbrRequestId' - This header uniquely identifies the request that was made and can be used for troubleshooting the request.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/troubleshooting-api-operations Learn more>
+--
+-- * 'pbrAccessControlAllowOrigin' - When request includes Origin, and a CORS rule matches: value of the origin request header in case of a match
+--
+-- * 'pbrAccessControlExposeHeaders' - When request includes Origin, and a CORS rule matches: response headers that are to be exposed to the client or issuer of the request
+--
+-- * 'pbrAccessControlAllowCredentials' - When request includes Origin, and a CORS rule matches: returns True unless all origins allowed.
+--
+-- * 'pbrServerEncrypted' - Whether the contents of the request are successfully encrypted using the specified algorithm
+--
+createPutBlobResponse
+  :: Types.ETag    -- ^ 'pbrETag'
+  -> Time.UTCTime -- ^ 'pbrLastModified'
+  -> Text         -- ^ 'pbrRequestId'
+  -> PutBlobResponse
+createPutBlobResponse eTag modified reqId
+  = PutBlobResponse eTag modified Nothing reqId Nothing Nothing Nothing False
+
+-- | /See:/ 'createPutBlobResponse' smart constructor.
+data PutBlobResponse = PutBlobResponse
+  { _pbrETag :: Types.ETag
+  , _pbrLastModified :: Time.UTCTime
+  , _pbrContentMD5 :: Maybe Text
+  , _pbrRequestId :: Text
+  , _pbrAccessControlAllowOrigin :: Maybe Text
+  , _pbrAccessControlExposeHeaders :: Maybe Text
+  , _pbrAccessControlAllowCredentials :: Maybe Bool
+  , _pbrServerEncrypted :: Bool
+  } deriving Show
+LensTH.makeLenses ''PutBlobResponse
+
+parseResponse
+  :: HTTPConduit.Response body
+  -> Either Types.Error PutBlobResponse
+parseResponse r = go $ HTTP.responseStatus r
+  where
+    go s
+      | s == Status.created201 = ok $ HTTPConduit.responseHeaders r
+      | s == Status.requestEntityTooLarge413 = Left Types.BlobTooLarge
+      | s == Status.preconditionFailed412 = Left Types.BlobUnderLease
+      | otherwise = Left $ Types.ErrorOther "Unrecognized status code"
+    ok hs = Either.either (Left . Types.MarshallError) Right
+          $  PutBlobResponse
+          <$> Request.lookupHeader hs "ETag"
+          <*> Request.lookupHeader hs "Last-Modified"
+          <*> Request.lookupHeaderOptional hs "Content-MD5"
+          <*> Request.lookupHeader hs "x-ms-request-id"
+          <*> Request.lookupHeaderOptional hs "Access-Control-Allow-Origin"
+          <*> Request.lookupHeaderOptional hs "Access-Control-Expose-Headers"
+          <*> Request.lookupHeaderOptional hs "Access-Control-Allow-Credentials"
+          <*> Request.lookupHeader hs "x-ms-request-server-encrypted"
+
+--------------------------------------------------------------------------------
 -- * Options
 
 -- | Creates a value of 'PutBlobOptions' with the minimal fields set.
@@ -84,6 +152,7 @@ import qualified Data.Either as Either
 -- * 'pboBlobName' - Name of the blob
 --
 -- * 'pboTimeout' - The timeout parameter is expressed in seconds.
+-- <https://docs.microsoft.com/en-us/rest/api/storageservices/setting-timeouts-for-blob-service-operations Learn more>
 --
 -- * 'pboContentEncoding' - Specifies which content encodings have been applied to the blob.
 -- This value is returned to the client when the Get Blob operation is performed on the blob resource.
@@ -97,7 +166,9 @@ import qualified Data.Either as Either
 --
 -- * 'pboCacheControl' - The Blob service stores this value but does not use or modify it.
 --
--- * 'pboMetadata' - Required if the blob has an active lease.
+-- * 'pboMetadata' - Name-value pairs associated with the blob as metadata.
+--
+-- * 'pboLeaseId' - Required if the blob has an active lease.
 --
 -- * 'pboContentDisposition' - Specifies how to process the response payload, and also can be used to attach additional metadata.
 -- For example, if set to attachment, it indicates that the user-agent should not display the response,
@@ -160,6 +231,7 @@ optionHeaders o = staticHeaders <> metaHeaders
       , (Header.hContentEncoding, o ^. pboContentEncoding)
       , (Header.hContentMD5, o ^. pboContentMD5)
       , (Header.hCacheControl, o ^. pboCacheControl)
+      , ("x-ms-lease-id", o ^. pboLeaseId)
       , ("x-ms-blob-content-disposition", o ^. pboContentDisposition)
       , (Header.hOrigin, o ^. pboOrigin)
       , ("x-ms-client-request-id", o ^. pboClientRequestId)
@@ -194,18 +266,17 @@ data PutBlockBlob = PutBlockBlob
   }
 LensTH.makeLenses ''PutBlockBlob
 
-instance Request.ToMethod PutBlockBlob where
+instance Request.ToRequest PutBlockBlob where
   toMethod = const putBlobMethod
-instance Request.ToBody PutBlockBlob where
   toBody = HTTPConduit.RequestBodyLBS . _pbbBody
-instance Request.ToHeaders PutBlockBlob where
   toHeaders x
     = ("x-ms-blob-type", Types.toBinary Blob.BlockBlob)
+    : (Header.hContentLength, BSC.pack . show . BSL.length . _pbbBody $ x)
     : (optionHeaders . _pbbOptions $ x)
-instance Request.ToQuery PutBlockBlob where
   toQuery = putBlobQuery . _pbbOptions
-instance Request.ToPath PutBlockBlob where
   toPath = putBlobPath . _pbbOptions
+  type Rs PutBlockBlob = PutBlobResponse
+  parseResponse = const parseResponse
 
 --------------------------------------------------------------------------------
 -- * Append blob
@@ -227,17 +298,15 @@ data PutAppendBlob = PutAppendBlob
   }
 LensTH.makeLenses ''PutAppendBlob
 
-instance Request.ToMethod PutAppendBlob where
+instance Request.ToRequest PutAppendBlob where
   toMethod = const putBlobMethod
-instance Request.ToBody PutAppendBlob
-instance Request.ToHeaders PutAppendBlob where
   toHeaders x
     = ("x-ms-blob-type", Types.toBinary Blob.AppendBlob)
     : (optionHeaders . _pabOptions $ x)
-instance Request.ToQuery PutAppendBlob where
   toQuery = putBlobQuery . _pabOptions
-instance Request.ToPath PutAppendBlob where
   toPath = putBlobPath . _pabOptions
+  type Rs PutAppendBlob = PutBlobResponse
+  parseResponse = const parseResponse
 
 --------------------------------------------------------------------------------
 -- * Page blob
@@ -267,10 +336,8 @@ data PutPageBlob = PutPageBlob
   }
 LensTH.makeLenses ''PutPageBlob
 
-instance Request.ToMethod PutPageBlob where
+instance Request.ToRequest PutPageBlob where
   toMethod = const putBlobMethod
-instance Request.ToBody PutPageBlob
-instance Request.ToHeaders PutPageBlob where
   toHeaders b
     = ("x-ms-blob-type", Types.toBinary Blob.PageBlob)
     : (optionHeaders . _ppbOptions $ b)
@@ -279,71 +346,7 @@ instance Request.ToHeaders PutPageBlob where
         , ("x-ms-blob-sequence-number", b ^.  ppbBlobSequenceNumber)
         ]
       )
-instance Request.ToQuery PutPageBlob where
   toQuery = putBlobQuery . _ppbOptions
-instance Request.ToPath PutPageBlob where
   toPath = putBlobPath . _ppbOptions
-
---------------------------------------------------------------------------------
--- * blob response
-
--- | Create a 'PutBlobResponse' with minimal fields.
---
--- Use one of the following lenses to modify other fields as desired:
---
--- * 'pbrETag' - The ETag contains a value that the client can use to perform conditional PUT operations by using the If-Match request header.
---
--- * 'pbrLastModified' - The date/time that the blob was last modified.
---
--- * 'pbrContentMD5' - This header is returned for a block blob so the client can check the integrity of message content.
---
--- * 'pbrRequestId' - This header uniquely identifies the request that was made and can be used for troubleshooting the request.
--- <https://docs.microsoft.com/en-us/rest/api/storageservices/troubleshooting-api-operations Learn more>
---
--- * 'pbrAccessControlAllowOrigin' - When request includes Origin, and a CORS rule matches: value of the origin request header in case of a match
---
--- * 'pbrAccessControlExposeHeaders' - When request includes Origin, and a CORS rule matches: response headers that are to be exposed to the client or issuer of the request
---
--- * 'pbrAccessControlAllowCredentials' - When request includes Origin, and a CORS rule matches: returns True unless all origins allowed.
---
--- * 'pbrServerEncrypted' - Whether the contents of the request are successfully encrypted using the specified algorithm
---
-createPutBlobResponse
-  :: Types.ETag    -- ^ 'pbrETag'
-  -> Time.UTCTime -- ^ 'pbrLastModified'
-  -> Text         -- ^ 'pbrRequestId'
-  -> PutBlobResponse
-createPutBlobResponse eTag modified reqId
-  = PutBlobResponse eTag modified Nothing reqId Nothing Nothing Nothing False
-
--- | /See:/ 'createPutBlobResponse' smart constructor.
-data PutBlobResponse = PutBlobResponse
-  { _pbrETag :: Types.ETag
-  , _pbrLastModified :: Time.UTCTime
-  , _pbrContentMD5 :: Maybe Text
-  , _pbrRequestId :: Text
-  , _pbrAccessControlAllowOrigin :: Maybe Text
-  , _pbrAccessControlExposeHeaders :: Maybe Text
-  , _pbrAccessControlAllowCredentials :: Maybe Bool
-  , _pbrServerEncrypted :: Bool
-  } deriving Show
-LensTH.makeLenses ''PutBlobResponse
-
-instance Request.FromResponse PutBlobResponse where
-  parseResponse r = go $ HTTP.responseStatus r
-    where
-      go s
-        | s == Status.created201 = ok $ HTTPConduit.responseHeaders r
-        | s == Status.requestEntityTooLarge413 = Left Types.BlobTooLarge
-        | s == Status.preconditionFailed412 = Left Types.BlobUnderLease
-        | otherwise = Left $ Types.ErrorOther "Unrecognized status code"
-      ok hs = Either.either (Left . Types.MarshallError) Right
-            $  PutBlobResponse
-           <$> Request.lookupHeader hs "ETag"
-           <*> Request.lookupHeader hs "Last-Modified"
-           <*> Request.lookupHeaderOptional hs "Content-MD5"
-           <*> Request.lookupHeader hs "x-ms-request-id"
-           <*> Request.lookupHeaderOptional hs "Access-Control-Allow-Origin"
-           <*> Request.lookupHeaderOptional hs "Access-Control-Expose-Headers"
-           <*> Request.lookupHeaderOptional hs "Access-Control-Allow-Credentials"
-           <*> Request.lookupHeader hs "x-ms-request-server-encrypted"
+  type Rs PutPageBlob = PutBlobResponse
+  parseResponse = const parseResponse

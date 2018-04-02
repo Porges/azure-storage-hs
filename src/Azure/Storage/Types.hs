@@ -11,6 +11,7 @@ import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString as BS
 import qualified Data.Maybe as Maybe
 import           Numeric.Natural (Natural)
+import           Text.Read (readMaybe)
 
 -- | todo: derive instances to make this more useful
 newtype ETag = ETag BS.ByteString
@@ -36,6 +37,8 @@ instance FromBinary Time.UTCTime where
     $ Time.parseTimeM False Time.defaultTimeLocale (T.unpack timeRFC1123) (BSC.unpack bs)
 instance FromBinary ETag where
   parseBinary = pure . ETag
+instance FromBinary Natural where
+  parseBinary x = Maybe.maybe (Left "Natural number") pure . readMaybe . BSC.unpack $ x
 
 class ToBinary a where
   toBinary :: a -> BS.ByteString

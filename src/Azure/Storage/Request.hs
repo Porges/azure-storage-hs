@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Azure.Storage.Request where
 
@@ -17,8 +17,7 @@ import           Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import           Data.Monoid ((<>))
 import qualified Data.CaseInsensitive as CI
-
-type ToRequest a = (ToMethod a, ToPath a, ToQuery a, ToHeaders a, ToBody a)
+import Data.Proxy (Proxy)
 
 createRequest :: ToRequest a => a -> HTTP.Request -> HTTP.Request
 createRequest a r
@@ -32,36 +31,37 @@ createRequest a r
     qs = Map.toList . Map.map Just $ toQuery a
 
 type Method = Method.Method
-class ToMethod a where
+type Path = BS.ByteString
+type QueryParams = Map BS.ByteString BS.ByteString
+type RequestHeaders = Header.RequestHeaders
+
+class ToRequest a where
+
   toMethod :: a -> Method
 
-type Path = BS.ByteString
-class ToPath a where
   toPath :: a -> Path
   toPath = const mempty
 
-type QueryParams = Map BS.ByteString BS.ByteString
-class ToQuery a where
   toQuery :: a -> QueryParams
   toQuery = const mempty
 
-type RequestHeaders = Header.RequestHeaders
-class ToHeaders a where
   toHeaders :: a -> RequestHeaders
   toHeaders = const mempty
 
-class ToBody a where
   toBody :: a -> HTTP.RequestBody
   toBody = const . HTTP.RequestBodyBS $ mempty
+
+  -- | the final typed response for the service
+  type Rs a :: *
+  parseResponse
+    :: Proxy a -- ^ for injectivity reasons
+    -> HTTP.Response BSL.ByteString
+    -> Either Types.Error (Rs a)
 
 mkBinaryPairs :: Types.ToBinary v => [(k, Maybe v)] -> [(k, BS.ByteString)]
 mkBinaryPairs xs = foldMap (uncurry go) xs
   where
     go h = Maybe.maybe mempty (\v -> pure (h, Types.toBinary v))
-
-type Response = HTTP.Response BSL.ByteString
-class FromResponse a where
-  parseResponse :: Response -> Either Types.Error a
 
 type ResponseHeaders = Header.ResponseHeaders
 

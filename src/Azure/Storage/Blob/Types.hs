@@ -19,6 +19,11 @@ data BlobType
   -- ^ optimized for random read/write operations
   -- provide the ability to write to a range of bytes in a blob
   deriving Show
+instance Types.FromBinary BlobType where
+  parseBinary "BlockBlob" = pure BlockBlob
+  parseBinary "AppendBlob" = pure AppendBlob
+  parseBinary "PageBlob" = pure PageBlob
+  parseBinary _ = Left "BlobType (BlockBlob|AppendBlob|PageBlob)"
 instance Types.ToBinary BlobType where
   toBinary = BSC.pack . show
 
