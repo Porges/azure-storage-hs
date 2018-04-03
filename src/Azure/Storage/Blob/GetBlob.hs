@@ -1,4 +1,3 @@
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -12,7 +11,6 @@ module Azure.Storage.Blob.GetBlob (
   , Range
 
   -- * Request Lenses
-  , gbrBody
   , gbContainerName
   , gbBlobName
   , gbSnapshot
@@ -27,6 +25,7 @@ module Azure.Storage.Blob.GetBlob (
   , GetBlobResponse
 
   -- * Response Lenses
+  , gbrBody
   , gbrLastModified
   , gbrMetaData
   , gbrContentLength
@@ -51,18 +50,15 @@ import           Data.Monoid ((<>))
 import           Lens.Micro ((^.), Lens', lens)
 import           Data.Text (Text)
 import           Numeric.Natural (Natural)
-import qualified Data.ByteString as BS
 import qualified Data.Map as Map
 import qualified Data.Text.Encoding as TE
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types.Header as Header
 import qualified Network.HTTP.Types.Method as Method
 import qualified Network.HTTP.Types.Status as Status
-import qualified Data.CaseInsensitive as CI
 import qualified Network.HTTP.Conduit as HTTPConduit
 import qualified Data.Time as Time
 import qualified Data.Either as Either
-import qualified Data.Maybe as Maybe
 
 --------------------------------------------------------------------------------
 -- * Creating a Request
@@ -268,7 +264,7 @@ parseResponse r = go $ HTTP.responseStatus r
     ok hs = Either.either (Left . Types.MarshallError) Right
           $  GetBlobResponse body
           <$> Request.lookupHeader hs "Last-Modified"
-          <*> (pure . getMetaData $ hs )
+          <*> (pure . Blob.decodeMetadata $ hs )
           <*> Request.lookupHeader hs "Content-Length"
           <*> Request.lookupHeader hs "Content-Type"
           <*> Request.lookupHeader hs "ETag"
@@ -282,15 +278,6 @@ parseResponse r = go $ HTTP.responseStatus r
           <*> Request.lookupHeaderOptional hs "Access-Control-Expose-Headers"
           <*> Request.lookupHeaderOptional hs "Access-Control-Allow-Credentials"
           <*> Request.lookupHeader hs "x-ms-server-encrypted"
-    getMetaData hs
-      = Map.map TE.decodeUtf8
-      . Map.mapKeys TE.decodeUtf8
-      . Map.fromList
-      . map (\(k,v) -> (Maybe.fromJust k, v) )
-      . filter (\h -> Maybe.isJust . fst $ h)
-      . map (\(k,v) -> (BS.stripPrefix "x-ms-meta-" k, v))
-      . map (\(k,v) -> (CI.original k, v) )
-      $ hs
 
 --------------------------------------------------------------------------------
 -- * Response Lenses

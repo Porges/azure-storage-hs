@@ -1,4 +1,3 @@
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -50,14 +49,12 @@ import           Data.Monoid ((<>))
 import           Lens.Micro ((^.), Lens', lens)
 import           Data.Text (Text)
 import           Numeric.Natural (Natural)
-import qualified Data.ByteString as BS
 import qualified Data.Map as Map
 import qualified Data.Text.Encoding as TE
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types.Header as Header
 import qualified Network.HTTP.Types.Method as Method
 import qualified Network.HTTP.Types.Status as Status
-import qualified Data.CaseInsensitive as CI
 import qualified Network.HTTP.Conduit as HTTPConduit
 import qualified Data.Time as Time
 import qualified Data.Either as Either
@@ -98,7 +95,7 @@ instance Show BlobType where
    <> show sn
    <> " }"
 
--- | Creates a value of 'PutBlobOptions' with the minimal fields set.
+-- | Creates a value of 'PutBlob' with the minimal fields set.
 --
 -- Use one of the following lenses to modify other fields as desired:
 --
@@ -168,7 +165,9 @@ instance Request.ToRequest PutBlob where
   toBody x = case x ^. pbBlobType of
               (BlockBlob body) -> body
               _ -> HTTPConduit.RequestBodyLBS mempty
-  toHeaders o = staticHeaders <> metaHeaders <> blobTypeHeaders (o ^. pbBlobType)
+  toHeaders o = staticHeaders
+             <> Blob.encodeMetadata (o ^. pbMetadata)
+             <> blobTypeHeaders (o ^. pbBlobType)
     where
       staticHeaders
         = Request.mkBinaryPairs
@@ -181,11 +180,6 @@ instance Request.ToRequest PutBlob where
         , (Header.hOrigin, o ^. pbOrigin)
         , ("x-ms-client-request-id", o ^. pbClientRequestId)
         ]
-      metaHeaders
-        = Map.toList
-        . Map.mapKeys (CI.mk . BS.append "x-ms-meta-" . TE.encodeUtf8)
-        . Map.map TE.encodeUtf8
-        $ o ^. pbMetadata
       blobTypeHeaders (BlockBlob _)
         = ("x-ms-blob-type", Types.toBinary Blob.BlockBlob)
         : []
