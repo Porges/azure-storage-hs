@@ -1,0 +1,91 @@
+name:                azure-storage
+version:             0.1.0.0
+github:              "Porges/azure-storage-hs"
+license:             BSD3
+author:              "George Pollard"
+maintainer:          "porges@porg.es"
+copyright:           "2018 George Pollard"
+category:            Web
+description:         Please see the README on Github at <https://github.com/Porges/azure-storage-hs#readme>
+
+extra-source-files:
+- README.md
+
+dependencies:
+- base >= 4.7 && < 5
+- bytestring
+- case-insensitive
+- conduit
+- conduit-extra
+- connection-string
+- containers
+- cryptonite
+- data-default-class
+- either
+- http-client >= 0.5.10 && < 0.6
+- http-client-tls
+- http-conduit
+- http-types
+- memory
+- mtl
+- network-uri
+- resourcet
+- text
+- time
+- xml-conduit
+- microlens
+
+library:
+  source-dirs: src
+
+tests:
+  integration-tests:
+    main:                integration-tests.hs
+    source-dirs:         tests
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - base
+    - azure-storage
+    - conduit
+    - hedgehog
+    - http-client
+    - http-client-tls
+    - either
+    - mtl
+    - resourcet
+    - tasty
+    - tasty-hedgehog
+    - tasty-hunit
+
+  unit-tests:
+    main:                unit-tests.hs
+    source-dirs:         tests
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - base
+    - azure-storage
+    - azure-storage
+    - hedgehog
+    - either
+    - tasty
+    - tasty-hedgehog
+    - tasty-hunit
+
+  doctests:
+    main:                doctest-driver.hs
+    source-dirs:         tests
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - base
+    - azure-storage
+    - doctest
+    - doctest-discover

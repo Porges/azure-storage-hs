@@ -4,12 +4,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Azure.Storage.Blob
-    ( BlobClient
-    , getBlobClient
-    , ContainerName
-    , containerName_
-    , BlobName
-    , blobName_
+    ( Client
+    , getClient
     , Error(..)
     , createContainer
     , createContainer'
@@ -22,6 +18,7 @@ module Azure.Storage.Blob
     , putBlob
     , Marker
     , listContainersFromMarker
+    , BlobType(..)
     )
 where
 
@@ -43,40 +40,15 @@ import qualified Network.HTTP.Client as HTTP
 import           Network.HTTP.Conduit (http, responseBody)
 import           Network.HTTP.Types (renderQuery)
 import           Network.HTTP.Types.Header (hContentLength)
-import           Network.HTTP.Types.Method (methodGet, methodPut, methodDelete)
+import           Network.HTTP.Types.Method (methodPut, methodDelete)
 import           Network.HTTP.Types.QueryLike (toQuery)
 import qualified Network.HTTP.Types.Status as S
 import qualified Text.XML.Stream.Parse as X
+import           Data.String (IsString)
+import           Azure.Storage.Blob.Types (ContainerName(..), BlobName(..), Client(..), getClient)
 
-data BlobClient = BlobClient
-    { blobReq :: HTTP.Request
-    , blobCreds :: Credentials
-    , blobHttp :: HTTP.Manager
-    }
-
-getBlobClient :: StorageAccount -> HTTP.Manager -> Maybe BlobClient
-getBlobClient StorageAccount{credentials, blobEndpoint} manager =
-    -- TODO Send @snoyberg upstream a `requestFromURI{,_}`
-    clientFromRequest <$> (HTTP.parseRequest =<< show <$> blobEndpoint)
-    where
-    clientFromRequest request = BlobClient (setRequestDefaults request) credentials manager
-    setRequestDefaults r = r { HTTP.requestHeaders = [("x-ms-version", apiVersion)] }
-
--- | A container name is a valid DNS name.
-newtype ContainerName = ContainerName Text
-    deriving (Show, Eq, Ord)
-
-containerName_ :: Text -> ContainerName
-containerName_ = ContainerName
-
-newtype BlobName = BlobName Text
-    deriving (Show, Eq, Ord)
-
-blobName_ :: Text -> BlobName
-blobName_ = BlobName
-
-issueRequest :: MonadResource m => BlobClient -> HTTP.Request -> ConduitT ByteString Void m b -> m b
-issueRequest BlobClient{blobCreds, blobHttp} rawRequest f = do
+issueRequest :: MonadResource m => Client -> HTTP.Request -> ConduitT ByteString Void m b -> m b
+issueRequest Client{blobCreds, blobHttp} rawRequest f = do
     request <- signRequest blobCreds rawRequest
     response <- http request blobHttp
     runConduit (responseBody response .| f)
@@ -86,8 +58,8 @@ data Error
     | AzureError ByteString (HTTP.Response LBS.ByteString)
     deriving (Eq, Show)
 
-issueRequestNoBody :: (MonadIO m, MonadError Error m) => BlobClient -> (HTTP.Request -> HTTP.Request) -> (S.Status -> Maybe b) -> m b
-issueRequestNoBody BlobClient{blobCreds, blobHttp, blobReq} mkreq handler = do
+issueRequestNoBody :: (MonadIO m, MonadError Error m) => Client -> (HTTP.Request -> HTTP.Request) -> (S.Status -> Maybe b) -> m b
+issueRequestNoBody Client{blobCreds, blobHttp, blobReq} mkreq handler = do
     request <- signRequest blobCreds (mkreq blobReq)
     response <- liftIO (HTTP.httpLbs request blobHttp)
     case handler (HTTP.responseStatus response) of
@@ -97,7 +69,7 @@ issueRequestNoBody BlobClient{blobCreds, blobHttp, blobReq} mkreq handler = do
                 Just errorCode -> throwError (AzureError errorCode response)
                 Nothing -> throwError (HttpError response)
 
-listContainers :: (MonadResource m, MonadThrow m) => BlobClient -> ConduitT () ContainerName m ()
+listContainers :: (MonadResource m, MonadThrow m) => Client -> ConduitT () ContainerName m ()
 listContainers bc = go Text.empty
     where
     go marker =
@@ -107,8 +79,8 @@ listContainers bc = go Text.empty
             Just newMarker -> go newMarker
 
 type Marker = Text
-listContainersFromMarker :: (MonadResource m, MonadThrow m) => BlobClient -> Marker -> ConduitT () ContainerName m (Maybe Marker)
-listContainersFromMarker bc@BlobClient{blobReq} marker = do
+listContainersFromMarker :: (MonadResource m, MonadThrow m) => Client -> Marker -> ConduitT () ContainerName m (Maybe Marker)
+listContainersFromMarker bc@Client{blobReq} marker = do
     issueRequest bc
         blobReq { HTTP.queryString = renderQuery True (toQuery query) }
         (X.parseBytes def .| enumerationResults `fuseUpstream` CC.mapM_ yield)
@@ -127,17 +99,17 @@ listContainersFromMarker bc@BlobClient{blobReq} marker = do
             _ <- X.ignoreTreeContent "MaxResults"
 
             X.force "expected Containers" $ X.tagNoAttr "Containers" $
-                X.manyYield $ X.tagNoAttr "Container" $ do 
+                X.manyYield $ X.tagNoAttr "Container" $ do
                     name <- X.force "expected Container/Name" $ X.tagNoAttr "Name" X.content
                     _ <- X.ignoreTreeContent "Properties"
                     return (ContainerName name)
 
             X.force "expected NextMarker" $
-                X.tagNoAttr "NextMarker" $ do 
+                X.tagNoAttr "NextMarker" $ do
                     nextMarker <- X.content
                     return (if Text.null nextMarker then Nothing else Just marker)
 
-listBlobs :: (MonadResource m, MonadThrow m) => BlobClient -> ContainerName -> ConduitT () BlobName m ()
+listBlobs :: (MonadResource m, MonadThrow m) => Client -> ContainerName -> ConduitT () BlobName m ()
 listBlobs bc cn = go Text.empty
     where
     go marker =
@@ -146,10 +118,10 @@ listBlobs bc cn = go Text.empty
             Nothing -> return ()
             Just newMarker -> go newMarker
 
-listBlobsFromMarker :: (MonadResource m, MonadThrow m) => BlobClient -> ContainerName -> Marker -> ConduitT () BlobName m (Maybe Marker)
-listBlobsFromMarker bc@BlobClient{blobReq} (ContainerName cn) marker = do
+listBlobsFromMarker :: (MonadResource m, MonadThrow m) => Client -> ContainerName -> Marker -> ConduitT () BlobName m (Maybe Marker)
+listBlobsFromMarker bc@Client{blobReq} (ContainerName cn) marker = do
     issueRequest bc
-        blobReq { 
+        blobReq {
             HTTP.queryString = renderQuery True (toQuery query),
             HTTP.path = HTTP.path blobReq <> "/" <> encodeUtf8 cn -- name is safe without encoding
         }
@@ -170,7 +142,7 @@ listBlobsFromMarker bc@BlobClient{blobReq} (ContainerName cn) marker = do
             _ <- X.ignoreTreeContent "Delimiter"
 
             X.force "expected Blobs" $ X.tagNoAttr "Blobs" $
-                X.manyYield $ X.tagNoAttr "Blob" $ do 
+                X.manyYield $ X.tagNoAttr "Blob" $ do
                     name <- X.force "expected Blob/Name" $ X.tagNoAttr "Name" X.content
                     _ <- X.ignoreTreeContent "Deleted"
                     _ <- X.ignoreTreeContent "Snapshot"
@@ -179,7 +151,7 @@ listBlobsFromMarker bc@BlobClient{blobReq} (ContainerName cn) marker = do
                     return (BlobName name)
 
             X.force "expected NextMarker" $
-                X.tagNoAttr "NextMarker" $ do 
+                X.tagNoAttr "NextMarker" $ do
                     nextMarker <- X.content
                     return (if Text.null nextMarker then Nothing else Just marker)
 
@@ -189,21 +161,30 @@ data ContainerAccess
     | Private
     deriving (Eq, Show)
 
+displayContainerAccess
+    :: IsString s
+    => ContainerAccess -> s
+displayContainerAccess ContainerPublic = "container"
+displayContainerAccess BlobsPublic = "blob"
+displayContainerAccess Private = "private"
+
 data CreateContainerOptions = CreateContainerOptions { containerAccess :: ContainerAccess }
+
+defaultCreateContainerOptions :: CreateContainerOptions
 defaultCreateContainerOptions = CreateContainerOptions Private
 
 -- | Tries to create a container with the given name.
 --
 -- Returns @True@ if the container was created, or @False@ if the container
 -- already existed.
-createContainer :: (MonadIO m, MonadError Error m) => BlobClient -> ContainerName -> m Bool
+createContainer :: (MonadIO m, MonadError Error m) => Client -> ContainerName -> m Bool
 createContainer bc cn = createContainer' bc cn defaultCreateContainerOptions
 
 -- | Tries to create a container with the given name, and the given options.
 --
 -- Returns @True@ if the container was created, or @False@ if the container
 -- already existed.
-createContainer' :: (MonadIO m, MonadError Error m) => BlobClient -> ContainerName -> CreateContainerOptions -> m Bool
+createContainer' :: (MonadIO m, MonadError Error m) => Client -> ContainerName -> CreateContainerOptions -> m Bool
 createContainer' bc (ContainerName name) opts =
     issueRequestNoBody bc req handle
     where
@@ -211,13 +192,11 @@ createContainer' bc (ContainerName name) opts =
         HTTP.method = methodPut,
         HTTP.path = HTTP.path r <> "/" <> encodeUtf8 name, -- name is safe without encoding
         HTTP.queryString = "?restype=container",
-        HTTP.requestHeaders = 
+        HTTP.requestHeaders =
             case containerAccess opts of
                 Private -> HTTP.requestHeaders r
                 val ->
-                    ("x-ms-blob-public-access", hVal) : HTTP.requestHeaders r
-                    where
-                    hVal = case val of ContainerPublic -> "container"; BlobsPublic -> "blob"
+                    ("x-ms-blob-public-access", displayContainerAccess val) : HTTP.requestHeaders r
     }
     handle s
         | s == S.created201 = Just True
@@ -228,7 +207,7 @@ createContainer' bc (ContainerName name) opts =
 --
 -- Returns @True@ if the container scheduled for deletion, or @False@ if the
 -- container was already deleted.
-deleteContainer :: (MonadIO m, MonadError Error m) => BlobClient -> ContainerName -> m Bool
+deleteContainer :: (MonadIO m, MonadError Error m) => Client -> ContainerName -> m Bool
 deleteContainer bc (ContainerName name) =
     issueRequestNoBody bc req handle
     where
@@ -248,19 +227,19 @@ data BlobType
     -- PageBlob
     -- AppendBlob
 
-putBlob :: (MonadIO m, MonadError Error m) => BlobClient -> ContainerName -> BlobName -> ByteString -> m ()
+putBlob :: (MonadIO m, MonadError Error m) => Client -> ContainerName -> BlobName -> ByteString -> m ()
 putBlob bc (ContainerName cn) (BlobName bn) bytes =
     issueRequestNoBody bc req handle
     where
     req r = r {
         HTTP.method = methodPut,
-        HTTP.path = HTTP.path r <> "/" <> encodeUtf8 cn <> "/" <> encodeUtf8 bn, -- cn is safe, TODO about bn
+        HTTP.path = encodeUtf8 cn <> "/" <> encodeUtf8 bn, -- cn is safe, TODO about bn
         HTTP.requestHeaders =
             (hContentLength, BS8.pack (show (BS8.length bytes))) :
             ("x-ms-blob-type", "BlockBlob") : -- TODO
-            HTTP.requestHeaders r, 
+            HTTP.requestHeaders r,
         HTTP.requestBody = HTTP.RequestBodyBS bytes
     }
-    handle s 
+    handle s
         | s == S.created201 = Just ()
         | otherwise = Nothing
