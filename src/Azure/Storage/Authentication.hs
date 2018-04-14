@@ -30,7 +30,7 @@ import           Data.Foldable (foldl')
 import           Data.Function ((&))
 import           Data.List (intersperse, sort)
 import qualified Data.Map as Map
-import           Data.Maybe (mapMaybe)
+import           Data.Maybe (mapMaybe, fromMaybe)
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Text.Encoding (encodeUtf8)
@@ -42,6 +42,7 @@ import qualified Network.HTTP.Types.Header as H
 import           Network.URI (URI(..), parseAbsoluteURI, parseURI, uriIsAbsolute)
 import           Data.Int (Int64)
 import           Data.Monoid ((<>))
+import           Control.Applicative ((<|>))
 
 -- | The supported version of the Azure Storage API.
 --
@@ -125,7 +126,24 @@ developmentStorageAccount = StorageAccount
     , tableEndpoint = parseAbsoluteURI "http://127.0.0.1:10002/devstoreaccount1"
     }
 
--- TODO: incomplete
+-- | Parse a connection string with endpoints and account credentials.
+--
+-- * AccountName (required) - Account name for the shared key
+--
+-- * AccountKey (required) - Account key for the shared key
+--
+-- * EndpointSuffix (required when Overrides are not set) - AccountName+service prefixed common endpoint for Blob, Queue and Table services.
+--
+-- * DefaultEndpointsProtocol (optional, default=https) - Protocol to be used for inferring end-points based on AccountName and EndpointSuffix.
+--
+-- * Overrides:
+--
+--      * BlobEndpoint (optional) - An explicit absolute URI override for the Blob end-point.
+--
+--      * QueueEndpoint (optional) - An explicit absolute URI override for the Queue end-point.
+--
+--      * TableEndpoint (optional) - An explicit absolute URI override for the Table end-point.
+--
 parseConnectionString :: Text -> Validation [String] StorageAccount
 parseConnectionString csIn =
     case CS.parse csIn of
@@ -148,20 +166,30 @@ parseConnectionString csIn =
                     Nothing -> Failure ["key 'AccountKey' not found in connection string"]
                     Just ak -> accountKey ak
 
-        blobUri = extractUri "BlobEndpoint"
-        queueUri = extractUri "QueueEndpoint"
-        tableUri = extractUri "TableEndpoint"
+        blobUri = extractUri "BlobEndpoint" "blob"
+        queueUri = extractUri "QueueEndpoint" "queue"
+        tableUri = extractUri "TableEndpoint" "table"
 
-        extractUri name =
-            case Map.lookup name cs of
+        extractUri endpointName name =
+            case (Map.lookup endpointName cs <|> defaultEndpointUri name) of
                 Nothing -> Success Nothing
-                Just uri ->
-                    case parseURI (Text.unpack uri) of
-                        Nothing -> Failure [Text.unpack name ++ " must be a valid URI"]
-                        Just parsedUri ->
-                            if uriIsAbsolute parsedUri
-                            then Success (Just parsedUri)
-                            else Failure [Text.unpack name ++ " must be an absolute URI"]
+                Just uri -> parseAbsoluteURI' endpointName uri
+
+        defaultEndpointUri :: Text -> Maybe Text
+        defaultEndpointUri name
+            = go (fromMaybe "https" $ Map.lookup "DefaultEndpointsProtocol" cs)
+           <$> (Map.lookup "EndpointSuffix" cs)
+           <*> (Map.lookup "AccountName" cs)
+            where
+                go protocol host accName = protocol <> "://" <> accName <> "." <> name <> "." <> host
+
+    parseAbsoluteURI' name uri =
+        case parseURI (Text.unpack uri) of
+            Nothing -> Failure [Text.unpack name ++ " must be a valid URI"]
+            Just parsedUri ->
+                if uriIsAbsolute parsedUri
+                then Success (Just parsedUri)
+                else Failure [Text.unpack name ++ " must be an absolute URI"]
 
 -- | Dates and signs the request.
 signRequest :: MonadIO m => Credentials -> HTTP.Request -> m HTTP.Request
